@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Fleet OS - Scheduler Console</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Local app data & database scripts -->
+    <script src="src/data/app_data.js"></script>
+    <script src="src/js/database.js"></script>
+    <style>
+        :root {
+            --bg-base: #F7F5F0;
+            --bg-surface: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-card-subtle: #F8F6F2;
+            --border-subtle: #0093A5;
+            --border-card: rgba(30, 147, 165, 0.1);
+            --text-bright: #34454C;
+            --text-primary: #34454C;
+            --text-secondary: #7B8688;
+            --text-muted: #7B8688;
+            --brand-primary: #D96629;
+            --status-safe: #059669;
+            --status-error: #DC2626;
+            --font-sans: "Inter", sans-serif;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+
+            --tag-cat-a-bg: #E3F2FD;
+            --tag-cat-a-fg: #1976D2;
+            --tag-cat-b-bg: #E8F5E9;
+            --tag-cat-b-fg: #388E3C;
+            --tag-cat-c-bg: #FFFDE7;
+            --tag-cat-c-fg: #F9A825;
+        }
+
+        body.dark-mode {
+            --bg-base: #111314;
+            --bg-surface: #1E272B;
+            --bg-card: #1E272B;
+            --bg-card-subtle: #263238;
+            --border-subtle: #2DB7C9;
+            --border-card: rgba(45, 183, 201, 0.2);
+            --text-bright: #F0F2F2;
+            --text-primary: #F0F2F2;
+            --text-secondary: #A2B0AD;
+            --text-muted: #A2B0AD;
+            --brand-primary: #E57338;
+            --status-safe: #81C784;
+            --status-error: #E57373;
+
+            --tag-cat-a-bg: rgba(25, 118, 210, 0.2);
+            --tag-cat-a-fg: #90CAF9;
+            --tag-cat-b-bg: rgba(56, 142, 60, 0.2);
+            --tag-cat-b-fg: #A5D6A7;
+            --tag-cat-c-bg: rgba(249, 168, 37, 0.2);
+            --tag-cat-c-fg: #FFE082;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            padding: 2rem;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            background: var(--tag-cat-c-bg);
+            color: var(--tag-cat-c-fg);
+        }
+
+        body.dark-mode .badge {
+            background: rgba(245, 158, 11, 0.2);
+            color: #FCD34D;
+        }
+
+        .theme-toggle {
+            background-color: var(--bg-card-subtle);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-subtle);
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: 500;
+            width: auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            color: var(--text-bright);
+            margin: 0;
+            margin-bottom: 0.5rem;
+            font-size: 2.25rem;
+            letter-spacing: -0.02em;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            margin: 0;
+            font-size: 1.125rem;
+        }
+
+        .card {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-card);
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
+            margin-bottom: 2rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-top: 0;
+            margin-bottom: 1rem;
+            color: var(--text-bright);
+        }
+
+        .view-section {
+            display: none;
+        }
+
+        .view-section.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--text-bright);
+        }
+
+        input[type="text"],
+        input[type="password"],
+        select,
+        input[type="time"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border-subtle);
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            border-radius: 4px;
+            font-family: var(--font-sans);
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: var(--brand-primary);
+            color: #FFFFFF;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            width: 100%;
+        }
+
+        body.dark-mode button {
+            color: #0F172A;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .logout-btn {
+            background-color: #64748B;
+            margin-top: 1rem;
+            color: #FFFFFF;
+        }
+
+        body.dark-mode .logout-btn {
+            background-color: var(--bg-card-subtle);
+            color: var(--text-primary);
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .alert.success {
+            background-color: rgba(5, 150, 105, 0.1);
+            color: var(--status-safe);
+            border: 1px solid var(--status-safe);
+            display: block;
+        }
+
+        .alert.error {
+            background-color: rgba(220, 38, 38, 0.1);
+            color: var(--status-error);
+            border: 1px solid var(--status-error);
+            display: block;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5rem;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        th {
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+        }
+
+        /* Stats tags */
+        .tag {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: var(--bg-card-subtle);
+            color: var(--text-secondary);
+        }
+
+        .tag.cat-a {
+            background: var(--tag-cat-a-bg);
+            color: var(--tag-cat-a-fg);
+        }
+
+        .tag.cat-b {
+            background: var(--tag-cat-b-bg);
+            color: var(--tag-cat-b-fg);
+        }
+
+        .tag.cat-c {
+            background: var(--tag-cat-c-bg);
+            color: var(--tag-cat-c-fg);
+        }
+
+        /* Auto-assignment result box */
+        #auto-assignment-result {
+            margin-bottom: 1.25rem;
+            padding: 1rem;
+            background-color: var(--bg-card-subtle);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            display: none;
+        }
+
+        /* Disabled state styling */
+        button[disabled]:hover {
+            opacity: 0.5;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="header-top">
+            <span class="badge">Database 4: Scheduler</span>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">☀️ Light</button>
+        </div>
+
+        <div class="header">
+            <h1>Smart Fleet OS</h1>
+            <p>Depot 44 (Chandapura) - Route & Driver Assignment</p>
+        </div>
+
+
+
+        <!-- Scheduler View -->
+        <div id="scheduler-view" class="card view-section">
+            <h2>Scheduler Console</h2>
+            <p style="color:var(--text-secondary)">Route & Driver Assignment.</p>
+            <div class="form-group"
+                style="padding-bottom:1rem; border-bottom:1px solid var(--border-subtle); margin-bottom:1.5rem;">
+                <p><strong>Available Buses in Ready Pool:</strong> <span id="pool-count" class="tag">0</span></p>
+            </div>
+
+            <div id="scheduler-alert" class="alert"></div>
+
+            <div class="form-group">
+                <label>Select Route / Schedule</label>
+                <select id="scheduler-route-select" onchange="onScheduleSelected()"></select>
+            </div>
+
+            <div id="auto-assignment-result"
+                style="margin-bottom: 1.25rem; padding: 1rem; background-color: var(--bg-card-subtle); border: 1px solid var(--border-subtle); border-radius: 6px; display: none;">
+                <!-- Reasoning displayed here -->
+            </div>
+
+            <div class="form-group">
+                <label>Select Driver</label>
+                <select id="scheduler-driver-select"></select>
+            </div>
+            <button id="final-assign-btn" onclick="finalizeAssignment()" disabled>Finalize Assignment</button>
+            <button class="logout-btn" onclick="schedulerLogout()">Logout</button>
+        </div>
+    </div>
+
+    <script>
+        // --- THEME MANAGEMENT ---
+        function toggleTheme() {
+            const body = document.body;
+            const btn = document.getElementById('theme-btn');
+            if (body.classList.contains('dark-mode')) {
+                body.classList.remove('dark-mode');
+                btn.innerText = '☀️ Light';
+                localStorage.setItem('fleet_theme', 'light');
+            } else {
+                body.classList.add('dark-mode');
+                btn.innerText = '🌙 Dark';
+                localStorage.setItem('fleet_theme', 'dark');
+            }
+        }
+
+        if (localStorage.getItem('fleet_theme') === 'dark') {
+            document.body.classList.add('dark-mode');
+            document.getElementById('theme-btn').innerText = '🌙 Dark';
+        }
+
+        // --- SECURITY & UTILITIES ---
+        // Security: Basic input sanitization to prevent XSS
+        function sanitizeInput(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Security: Mocking session tokens (scheduler-specific)
+        function generateMockToken(role) {
+            return btoa(role + ':' + Date.now() + ':secure_salt_mock');
+        }
+
+        function verifySession() {
+            const token = sessionStorage.getItem('auth_token');
+            const role = sessionStorage.getItem('auth_role');
+            if (!token || !role) return null;
+            try {
+                const decoded = atob(token);
+                if (decoded.startsWith(role + ':')) {
+                    return role;
+                }
+                return null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Authorization Guard - Scheduler only
+        function requireSchedulerRole() {
+            const role = verifySession();
+            if (!role || role !== 'scheduler') {
+                schedulerLogout();
+                throw new Error("Unauthorized Access - Scheduler role required");
+            }
+            return role;
+        }
+
+        // --- STATE MANAGEMENT ---
+        window.onload = function () {
+            // Safe access to globals
+            window.FLEET = typeof FLEET !== 'undefined' ? FLEET : [];
+            window.SCHEDULES = typeof SCHEDULES !== 'undefined' ? SCHEDULES : [];
+            window.ROUTES = typeof ROUTES !== 'undefined' ? ROUTES : [];
+
+            let localWorkflowState = {};
+            try {
+                let item = localStorage.getItem('fleet_workflow_state');
+                if (item) {
+                    let parsed = JSON.parse(item);
+                    if (typeof parsed === 'object' && parsed !== null) {
+                        localWorkflowState = parsed;
+                    }
+                }
+            } catch (e) {
+                console.warn("Could not parse state from localStorage.");
+            }
+
+            function saveState() {
+                localStorage.setItem('fleet_workflow_state', JSON.stringify(localWorkflowState));
+            }
+
+            // Initialize state for all buses
+            window.FLEET.forEach(bus => {
+                if (!localWorkflowState[bus.id]) {
+                    localWorkflowState[bus.id] = {
+                        chargeApproved: false,
+                        cleanApproved: false,
+                        scheduleAssigned: null,
+                        assignedDriver: null
+                    };
+                }
+            });
+            saveState();
+
+            window.getMergedFleet = function () {
+                return window.FLEET.map(bus => {
+                    return {
+                        ...bus,                           // Base fleet data
+                        ...localWorkflowState[bus.id]     // Workflow state overlay
+                    };
+                });
+            };
+
+            // --- NAVIGATION ---
+            window.showView = function (viewId) {
+                document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+                document.getElementById(viewId).classList.add('active');
+                clearAlerts();
+            };
+
+            function clearAlerts() {
+                document.querySelectorAll('.alert').forEach(el => {
+                    el.className = 'alert';
+                    el.innerText = '';
+                });
+            }
+
+            window.showAlert = function (viewPrefix, type, msg) {
+                const el = document.getElementById(viewPrefix + '-alert');
+                // Safe assignment using sanitize
+                el.innerHTML = sanitizeInput(msg);
+                el.className = 'alert ' + type;
+            };
+
+            // Check if there is an active session on load
+            const activeRole = verifySession();
+            if (activeRole === 'scheduler') {
+                loadSchedulerView();
+                showView('scheduler-view');
+            } else {
+                // Redirect to main login if not authenticated
+                window.location.href = '!Doctype html.html';
+            }
+
+            // --- AUTHENTICATION ---
+            window.schedulerLogout = function () {
+                // Return all assigned buses to depot before logging out
+                try {
+                    const assignments = window.FleetDB.Scheduler.getAssignments();
+                    assignments.forEach(bus => {
+                        window.FleetDB.Scheduler.returnToDepot(bus.busId);
+                    });
+                } catch (e) {
+                    console.warn("Error returning buses to depot during logout:", e);
+                }
+                sessionStorage.removeItem('auth_token');
+                sessionStorage.removeItem('auth_role');
+                window.location.href = '!Doctype html.html';
+            };
+
+            function goToMainLogin() {
+                window.location.href = '!Doctype html.html';
+            }
+
+            function loadSchedulerView() {
+                requireSchedulerRole();
+                initSchedulerView();
+            }
+
+            // --- SCHEDULER LOGIC ---
+            function initSchedulerView() {
+                requireSchedulerRole();
+                const readyPool = window.FleetDB.Scheduler.getReadyPool();
+                document.getElementById('pool-count').innerText = readyPool.length;
+
+                const scheduleSelect = document.getElementById('scheduler-route-select');
+                scheduleSelect.innerHTML = '<option value="">-- Choose Schedule (Route) --</option>';
+
+                const assignedSchedules = window.FleetDB.Scheduler.getAssignments().map(b => b.scheduleAssigned).filter(Boolean);
+
+                window.SCHEDULES.forEach(sch => {
+                    const routeInfo = window.ROUTES.find(r => r.id === sch.route);
+                    const routeDiff = routeInfo ? routeInfo.category : 'Moderate';
+                    const [h, m] = (sch.departure || "00:00").split(':').map(Number);
+                    const mins = (h || 0) * 60 + (m || 0);
+
+                    let ts = 'Peak';
+                    if (mins < 420) ts = 'Normal';
+                    else if (mins >= 420 && mins < 600) ts = 'Extreme Peak';
+                    else if (mins >= 960 && mins < 1200) ts = 'Extreme Peak';
+
+                    if (routeDiff === 'Complex') sch.allowedCats = ['A'];
+                    else if (routeDiff === 'Simple' && ts === 'Normal') sch.allowedCats = ['A', 'B', 'C'];
+                    else sch.allowedCats = ['A', 'B'];
+                });
+
+                window.SCHEDULES.filter(s => !assignedSchedules.includes(s.id)).forEach(sch => {
+                    const opt = document.createElement('option');
+                    opt.value = sanitizeInput(sch.id);
+                    opt.text = `${sch.id} | Route ${sch.route} | Req: ${sch.singleChargeReq}km | Cat: ${sch.allowedCats.join(', ')}`;
+                    scheduleSelect.appendChild(opt);
+                });
+
+                const driverSelect = document.getElementById('scheduler-driver-select');
+                driverSelect.innerHTML = '<option value="">-- Choose Driver --</option>';
+
+                const allDrivers = Array.from(new Set(window.FLEET.map(b => b.driver).filter(Boolean))).sort();
+                const assignedDrivers = window.FleetDB.Scheduler.getAssignments().map(b => b.assignedDriver).filter(Boolean);
+
+                // Store available drivers for use in evaluateBestBus
+                window.availableDrivers = allDrivers.filter(d => !assignedDrivers.includes(d));
+
+                window.availableDrivers.forEach(d => {
+                    const opt = document.createElement('option');
+                    opt.value = sanitizeInput(d);
+                    opt.text = d;
+                    driverSelect.appendChild(opt);
+                });
+            }
+
+            window.onScheduleSelected = function () {
+                requireSchedulerRole();
+                evaluateBestBus();
+            };
+
+            window.evaluateBestBus = function () {
+                requireSchedulerRole();
+                const scheduleId = sanitizeInput(document.getElementById('scheduler-route-select').value);
+                const resultBox = document.getElementById('auto-assignment-result');
+                const assignBtn = document.getElementById('final-assign-btn');
+                const driverSelect = document.getElementById('scheduler-driver-select');
+
+                if (!scheduleId) {
+                    resultBox.style.display = 'none';
+                    assignBtn.disabled = true;
+                    return;
+                }
+
+                const schedule = window.SCHEDULES.find(s => s.id === scheduleId);
+                if (!schedule) return;
+
+                // Get ready pool from SchedulerDB (double-approved and unassigned buses)
+                const pool = window.FleetDB.Scheduler.getReadyPool();
+
+                const activeCats = schedule.allowedCats;
+
+                let validBuses = pool.filter(b => activeCats.includes(b.cat));
+                validBuses = validBuses.filter(b => b.actualRange >= schedule.singleChargeReq);
+
+                if (validBuses.length === 0) {
+                    resultBox.style.display = 'block';
+                    const safeCats = sanitizeInput(activeCats.join(', '));
+                    resultBox.innerHTML = `<p style="color:var(--status-error); font-weight:700; font-size:1.05rem; margin:0;">&#9888; No bus available for this route! No ready bus meets both range (&ge;${schedule.singleChargeReq} km) and category ([${safeCats}]) requirements.</p>`;
+                    assignBtn.disabled = true;
+                    window.currentBestBusId = null;
+                    return;
+                }
+
+                validBuses.sort((a, b) => (a.actualRange - schedule.singleChargeReq) - (b.actualRange - schedule.singleChargeReq));
+                validBuses.sort((a, b) => {
+                    const rank = { 'C': 1, 'B': 2, 'A': 3 };
+                    return rank[a.cat] - rank[b.cat];
+                });
+
+                const bestBus = validBuses[0];
+                window.currentBestBusId = bestBus.busId;
+
+                resultBox.style.display = 'block';
+
+                const safeBestBusId = sanitizeInput(bestBus.busId);
+                const safeBestBusReg = sanitizeInput(bestBus.regNo);
+                const safeCat = sanitizeInput(bestBus.cat);
+                const safeActiveCats = sanitizeInput(activeCats.join(', '));
+
+                resultBox.innerHTML = `
+                <div style="font-weight:600; font-size:1.05rem; margin-bottom:0.25rem;">
+                    &#127919; Recommended: Bus ${safeBestBusId} <span style="font-weight:normal; color:var(--text-secondary);">(${safeBestBusReg})</span>
+                </div>
+                <div style="font-size:0.9rem; color:var(--text-secondary); line-height:1.4;">
+                    <strong>Reasoning:</strong> Matches Category <strong>${safeCat}</strong> (Allowed: ${safeActiveCats}).
+                    Actual range of <strong>${bestBus.actualRange} km</strong> comfortably fulfills route requirement of <strong>${schedule.singleChargeReq} km</strong>
+                    with an optimal safety buffer of +${(bestBus.actualRange - schedule.singleChargeReq).toFixed(1)} km.
+                    ${bestBus.driver ? `<br><strong>Default Driver:</strong> ${sanitizeInput(bestBus.driver)} (auto-selected, changeable below).` : ''}
+                </div>
+            `;
+
+                assignBtn.disabled = false;
+
+                // Auto-select the bus's default driver
+                if (bestBus.driver) {
+                    let driverFound = false;
+                    for (let i = 0; i < driverSelect.options.length; i++) {
+                        if (driverSelect.options[i].value === bestBus.driver) {
+                            driverSelect.selectedIndex = i;
+                            driverFound = true;
+                            break;
+                        }
+                    }
+                    // If the bus's default driver isn't in the available list, add them at the top
+                    if (!driverFound) {
+                        const opt = document.createElement('option');
+                        opt.value = sanitizeInput(bestBus.driver);
+                        opt.text = bestBus.driver + ' (Default)';
+                        driverSelect.insertBefore(opt, driverSelect.options[1]);
+                        driverSelect.selectedIndex = 1;
+                    }
+                } else {
+                    // No default driver — select the first available driver if any
+                    driverSelect.selectedIndex = driverSelect.options.length > 1 ? 1 : 0;
+                }
+            };
+
+            window.finalizeAssignment = function () {
+                requireSchedulerRole();
+                const scheduleId = sanitizeInput(document.getElementById('scheduler-route-select').value);
+                const driverName = sanitizeInput(document.getElementById('scheduler-driver-select').value);
+                const busId = window.currentBestBusId;
+
+                if (!scheduleId || !driverName || !busId) {
+                    showAlert('scheduler', 'error', 'Please ensure a route, driver, and valid bus are selected.');
+                    return;
+                }
+
+                try {
+                    // Assign bus using SchedulerDB
+                    window.FleetDB.Scheduler.assignBus(busId, scheduleId, driverName);
+
+                    showAlert('scheduler', 'success', `Success! Bus ${busId} dynamically allocated to Route Schedule ${scheduleId} with Driver ${driverName}.`);
+
+                    document.getElementById('auto-assignment-result').style.display = 'none';
+                    document.getElementById('final-assign-btn').disabled = true;
+                    window.currentBestBusId = null;
+                    initSchedulerView(); // Refresh the view
+                } catch (e) {
+                    showAlert('scheduler', 'error', 'Error assigning bus: ' + e.message);
+                }
+            };
+        };
+    </script>
+
+</body>
+
+</html>

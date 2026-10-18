@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Fleet OS - Unified Dispatch & Admin Login</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Local app data script -->
+    <script src="src/data/app_data.js"></script>
+    <style>
+        /* Color Theory: Professional analogous slate & deep blue palette */
+        :root {
+            --bg-base: #F7F5F0;
+            --bg-surface: #FFFFFF;
+            --bg-card: #FFFFFF;
+            --bg-card-subtle: #F8F6F2;
+            --border-subtle: #0093A5;
+            --border-card: rgba(30, 147, 165, 0.1);
+            --text-bright: #34454C;
+            --text-primary: #34454C;
+            --text-secondary: #7B8688;
+            --text-muted: #7B8688;
+            --brand-primary: #D96629;
+            --status-safe: #059669;
+            --status-error: #DC2626;
+            --font-sans: "Inter", sans-serif;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+
+            --tag-cat-a-bg: #E3F2FD;
+            --tag-cat-a-fg: #1976D2;
+            --tag-cat-b-bg: #E8F5E9;
+            --tag-cat-b-fg: #388E3C;
+            --tag-cat-c-bg: #FFFDE7;
+            --tag-cat-c-fg: #F9A825;
+        }
+
+        body.dark-mode {
+            --bg-base: #111314;
+            --bg-surface: #1E272B;
+            --bg-card: #1E272B;
+            --bg-card-subtle: #263238;
+            --border-subtle: #2DB7C9;
+            --border-card: rgba(45, 183, 201, 0.2);
+            --text-bright: #F0F2F2;
+            --text-primary: #F0F2F2;
+            --text-secondary: #A2B0AD;
+            --text-muted: #A2B0AD;
+            --brand-primary: #E57338;
+            --status-safe: #81C784;
+            --status-error: #E57373;
+
+            --tag-cat-a-bg: rgba(25, 118, 210, 0.2);
+            --tag-cat-a-fg: #90CAF9;
+            --tag-cat-b-bg: rgba(56, 142, 60, 0.2);
+            --tag-cat-b-fg: #A5D6A7;
+            --tag-cat-c-bg: rgba(249, 168, 37, 0.2);
+            --tag-cat-c-fg: #FFE082;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            padding: 2rem;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .theme-toggle {
+            background-color: var(--bg-card-subtle);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-subtle);
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: 500;
+            width: auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            color: var(--text-bright);
+            margin: 0;
+            margin-bottom: 0.5rem;
+            font-size: 2.25rem;
+            letter-spacing: -0.02em;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            margin: 0;
+            font-size: 1.125rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-top: 0;
+            margin-bottom: 1rem;
+            color: var(--text-bright);
+        }
+
+        .card {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-card);
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
+            margin-bottom: 2rem;
+        }
+
+        .view-section {
+            display: none;
+        }
+        .view-section.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: var(--text-bright);
+        }
+
+        input[type="text"], input[type="password"], select, input[type="time"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border-subtle);
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            border-radius: 4px;
+            font-family: var(--font-sans);
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: var(--brand-primary);
+            color: #FFFFFF;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            width: 100%;
+        }
+
+        body.dark-mode button {
+            color: #0F172A;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .logout-btn {
+            background-color: #64748B;
+            margin-top: 1rem;
+            color: #FFFFFF;
+        }
+
+        body.dark-mode .logout-btn {
+            background-color: var(--bg-card-subtle);
+            color: var(--text-primary);
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .alert.success {
+            background-color: rgba(5, 150, 105, 0.1);
+            color: var(--status-safe);
+            border: 1px solid var(--status-safe);
+            display: block;
+        }
+
+        .alert.error {
+            background-color: rgba(220, 38, 38, 0.1);
+            color: var(--status-error);
+            border: 1px solid var(--status-error);
+            display: block;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        th {
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+        }
+
+        /* Stats tags */
+        .tag {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: var(--bg-card-subtle);
+            color: var(--text-secondary);
+        }
+
+        .tag.cat-a { background: var(--tag-cat-a-bg); color: var(--tag-cat-a-fg); }
+        .tag.cat-b { background: var(--tag-cat-b-bg); color: var(--tag-cat-b-fg); }
+        .tag.cat-c { background: var(--tag-cat-c-bg); color: var(--tag-cat-c-fg); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-top">
+        <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">☀️ Light</button>
+    </div>
+
+    <div class="header">
+        <h1>Smart Fleet OS</h1>
+        <p>Depot 44 (Chandapura) - Unified Dispatch & Admin Portal</p>
+    </div>
+
+    <!-- Login View -->
+    <div id="login-view" class="card view-section active">
+        <h2>Login</h2>
+        <div id="login-alert" class="alert"></div>
+        <div class="form-group">
+            <label>Username</label>
+            <input type="text" id="username" placeholder="Enter username">
+            <small style="color:var(--text-muted); display:block; margin-top:4px;">
+                Roles: <b>admin</b>, <b>charge_incharge</b>, <b>cleaner</b>, <b>scheduler</b>
+            </small>
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="password" placeholder="Enter password">
+        </div>
+        <button onclick="login()">Login</button>
+    </div>
+
+    <!-- Cleaner View -->
+    <div id="cleaner-view" class="card view-section">
+        <h2>Cleaner Hub</h2>
+        <p style="color:var(--text-secondary)">Buses waiting for interior/exterior cleaning. Mark buses as cleaned to send them for charging.</p>
+        <div id="cleaner-alert" class="alert"></div>
+        <div class="form-group">
+            <label>Search Bus</label>
+            <input type="text" id="cleaner-search" placeholder="Type bus ID or registration..." oninput="filterCleanerList()">
+        </div>
+        <div id="cleaner-list-container">
+            <!-- Render table of buses ready to clean -->
+        </div>
+        <div id="cleaner-announcement" style="display:none; margin-bottom:0.75rem; padding:0.75rem 1rem; background:var(--bg-card-subtle); border:1px solid var(--border-subtle); border-radius:6px; font-size:0.92rem; color:var(--text-primary);"></div>
+        <button onclick="approveForCharging()">Approve for Charging</button>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <!-- Charger View -->
+    <div id="charger-view" class="card view-section">
+        <h2>Charging / Depot Incharge</h2>
+        <p style="color:var(--text-secondary)">Select cleaned buses that have completed charging to approve for scheduling.</p>
+        <div id="charger-alert" class="alert"></div>
+        <div class="form-group">
+            <label>Select Bus</label>
+            <select id="charger-bus-select"></select>
+        </div>
+        <button onclick="approveForScheduling()">Approve for Scheduling</button>
+        <button onclick="approveAllForScheduling()" style="background:var(--status-safe); margin-top:0.5rem; color:white;">Approve All Available Buses</button>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <!-- Scheduler View -->
+    <div id="scheduler-view" class="card view-section">
+        <h2>Scheduler Console</h2>
+        <p style="color:var(--text-secondary)">Route & Driver Assignment.</p>
+        <div class="form-group" style="padding-bottom:1rem; border-bottom:1px solid var(--border-subtle); margin-bottom:1.5rem;">
+            <p><strong>Available Buses in Ready Pool:</strong> <span id="pool-count" class="tag">0</span></p>
+        </div>
+
+        <div id="scheduler-alert" class="alert"></div>
+
+        <div class="form-group">
+            <label>Select Route / Schedule</label>
+            <select id="scheduler-route-select" onchange="onScheduleSelected()"></select>
+        </div>
+
+        <div id="auto-assignment-result" style="margin-bottom: 1.25rem; padding: 1rem; background-color: var(--bg-card-subtle); border: 1px solid var(--border-subtle); border-radius: 6px; display: none;">
+            <!-- Reasoning displayed here -->
+        </div>
+        <div class="form-group">
+            <label>Select Driver</label>
+            <select id="scheduler-driver-select"></select>
+        </div>
+        <button id="final-assign-btn" onclick="finalizeAssignment()" disabled>Finalize Assignment</button>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+</div>
+
+<script>
+    // --- THEME MANAGEMENT ---
+    function toggleTheme() {
+        const body = document.body;
+        const btn = document.getElementById('theme-btn');
+        if (body.classList.contains('dark-mode')) {
+            body.classList.remove('dark-mode');
+            btn.innerText = '☀️ Light';
+            localStorage.setItem('fleet_theme', 'light');
+        } else {
+            body.classList.add('dark-mode');
+            btn.innerText = '🌙 Dark';
+            localStorage.setItem('fleet_theme', 'dark');
+        }
+    }
+
+    if (localStorage.getItem('fleet_theme') === 'dark') {
+        document.body.classList.add('dark-mode');
+        document.getElementById('theme-btn').innerText = '🌙 Dark';
+    }
+
+    // --- SECURITY & UTILITIES ---
+    // Security: Basic input sanitization to prevent XSS
+    function sanitizeInput(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // Security: Mocking session tokens
+    function generateMockToken(role) {
+        return btoa(role + ':' + Date.now() + ':secure_salt_mock');
+    }
+
+    function verifySession() {
+        const token = sessionStorage.getItem('auth_token');
+        const role = sessionStorage.getItem('auth_role');
+        if (!token || !role) return null;
+        try {
+            const decoded = atob(token);
+            if (decoded.startsWith(role + ':')) {
+                return role;
+            }
+            return null;
+        } catch(e) {
+            return null;
+        }
+    }
+
+    // Authorization Guard
+    function requireRole(allowedRoles) {
+        const role = verifySession();
+        if (!role || !allowedRoles.includes(role)) {
+            logout();
+            throw new Error("Unauthorized Access");
+        }
+        return role;
+    }
+
+    // --- STATE MANAGEMENT ---
+    window.onload = function() {
+        // Safe access to globals
+        window.FLEET = typeof FLEET !== 'undefined' ? FLEET : [];
+        window.SCHEDULES = typeof SCHEDULES !== 'undefined' ? SCHEDULES : [];
+        window.ROUTES = typeof ROUTES !== 'undefined' ? ROUTES : [];
+
+        let localWorkflowState = {};
+        try {
+            let item = localStorage.getItem('fleet_workflow_state');
+            if (item) {
+                let parsed = JSON.parse(item);
+                if (typeof parsed === 'object' && parsed !== null) {
+                    localWorkflowState = parsed;
+                }
+            }
+        } catch(e) {
+            console.warn("Could not parse state from localStorage.");
+        }
+
+        function saveState() {
+            localStorage.setItem('fleet_workflow_state', JSON.stringify(localWorkflowState));
+        }
+
+        window.FLEET.forEach(bus => {
+            if (!localWorkflowState[bus.id]) {
+                localWorkflowState[bus.id] = {
+                    chargeApproved: false,
+                    cleanApproved: false,
+                    scheduleAssigned: null,
+                    assignedDriver: null
+                };
+            }
+        });
+        saveState();
+
+        window.getMergedFleet = function() {
+            return window.FLEET.map(bus => {
+                return { ...bus, ...localWorkflowState[bus.id] };
+            });
+        };
+
+        // --- NAVIGATION ---
+        window.showView = function(viewId) {
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            clearAlerts();
+        };
+
+        function clearAlerts() {
+            document.querySelectorAll('.alert').forEach(el => {
+                el.className = 'alert';
+                el.innerText = '';
+            });
+        }
+
+        window.showAlert = function(viewPrefix, type, msg) {
+            const el = document.getElementById(viewPrefix + '-alert');
+            // Safe assignment using sanitize
+            el.innerHTML = sanitizeInput(msg);
+            el.className = 'alert ' + type;
+        };
+
+        // Check if there is an active session on load
+        const activeRole = verifySession();
+        if (activeRole) {
+            loadRoleView(activeRole);
+        }
+
+        // --- AUTHENTICATION ---
+        window.login = function() {
+            const user = sanitizeInput(document.getElementById('username').value.trim().toLowerCase());
+            const pass = document.getElementById('password').value.trim();
+
+            if (!user || !pass) {
+                showAlert('login', 'error', 'Missing credentials.');
+                return;
+            }
+
+            // Security: In a real system, verify hashed password via API. Mocking role-based auth here.
+            // Expected password equals username for this mock
+            if (user === pass && user === 'admin') {
+                sessionStorage.setItem('auth_token', generateMockToken('admin'));
+                sessionStorage.setItem('auth_role', 'admin');
+                window.location.href = 'index.html';
+                return;
+            }
+
+            if(user === pass && ['charge_incharge', 'cleaner', 'scheduler'].includes(user)) {
+                sessionStorage.setItem('auth_token', generateMockToken(user));
+                sessionStorage.setItem('auth_role', user);
+                loadRoleView(user);
+            } else {
+                showAlert('login', 'error', 'Invalid credentials.');
+            }
+        };
+
+        window.logout = function() {
+            sessionStorage.removeItem('auth_token');
+            sessionStorage.removeItem('auth_role');
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            showView('login-view');
+        };
+
+        function loadRoleView(role) {
+            if (role === 'charge_incharge') {
+                initChargerView();
+                showView('charger-view');
+            } else if (role === 'cleaner') {
+                initCleanerView();
+                showView('cleaner-view');
+            } else if (role === 'scheduler') {
+                initSchedulerView();
+                showView('scheduler-view');
+            } else {
+                logout();
+            }
+        }
+
+        // --- CHARGER INCHARGE LOGIC ---
+        function initChargerView() {
+            requireRole(['charge_incharge']);
+
+            const select = document.getElementById('charger-bus-select');
+            select.innerHTML = '<option value="">-- Choose Bus --</option>';
+
+            const fleet = window.getMergedFleet();
+            const pendingBuses = fleet.filter(b => b.cleanApproved && !b.chargeApproved);
+
+            if (pendingBuses.length === 0) {
+                select.innerHTML = '<option value="">No cleaned buses pending charge approval.</option>';
+                select.disabled = true;
+                return;
+            }
+
+            select.disabled = false;
+            pendingBuses.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = sanitizeInput(b.id);
+                // Safe text setting
+                opt.text = `${b.id} (${b.regNo})`;
+                select.appendChild(opt);
+            });
+        }
+
+        window.approveForScheduling = function() {
+            requireRole(['charge_incharge']);
+            const busId = sanitizeInput(document.getElementById('charger-bus-select').value);
+            if (!busId) {
+                showAlert('charger', 'error', 'Please select a bus.');
+                return;
+            }
+
+            const fleet = window.getMergedFleet();
+            const bus = fleet.find(b => b.id === busId);
+            if (bus) {
+                localWorkflowState[busId].chargeApproved = true;
+                saveState();
+                showAlert('charger', 'success', `Bus ${busId} approved for scheduling.`);
+                initChargerView();
+            }
+        };
+
+        window.approveAllForScheduling = function() {
+            requireRole(['charge_incharge']);
+            const fleet = window.getMergedFleet();
+            const eligible = fleet.filter(b => b.cleanApproved && !b.chargeApproved);
+            if (eligible.length === 0) {
+                showAlert('charger', 'error', 'No buses available to approve.');
+                return;
+            }
+            eligible.forEach(b => { localWorkflowState[b.id].chargeApproved = true; });
+            saveState();
+            showAlert('charger', 'success', `✅ ${eligible.length} bus(es) approved for scheduling.`);
+            initChargerView();
+        };
+
+        // --- CLEANER LOGIC ---
+        function initCleanerView() {
+            requireRole(['cleaner']);
+            const container = document.getElementById('cleaner-list-container');
+            const fleet = window.getMergedFleet();
+            const readyToClean = fleet.filter(b => !b.cleanApproved);
+
+            if (readyToClean.length === 0) {
+                container.innerHTML = '<p style="color:var(--text-muted)">No buses currently waiting for cleaning.</p>';
+                return;
+            }
+
+            let html = '<table id="cleaner-table"><thead><tr><th>Bus ID</th><th>Registration</th><th>Select</th></tr></thead><tbody>';
+            readyToClean.forEach(b => {
+                const sId = sanitizeInput(b.id);
+                const sReg = sanitizeInput(b.regNo);
+                html += `
+                    <tr data-bus-id="${sId}" data-reg-no="${sReg}">
+                        <td><strong>${sId}</strong></td>
+                        <td>${sReg}</td>
+                        <td><input type="checkbox" class="clean-checkbox" value="${sId}"></td>
+                    </tr>
+                `;
+            });
+            html += '</tbody></table>';
+            // InnerHTML is safe because id and regNo are sanitized
+            container.innerHTML = html;
+
+            const annDiv = document.getElementById('cleaner-announcement');
+            annDiv.style.display = 'none';
+            annDiv.innerHTML = '';
+        }
+
+        window.filterCleanerList = function() {
+            // Unchanged except implicitly protected since view only renders under role
+            const searchInput = document.getElementById('cleaner-search');
+            if(!searchInput) return;
+            const query = searchInput.value.toLowerCase();
+            const rows = document.querySelectorAll('#cleaner-table tbody tr');
+
+            rows.forEach(row => {
+                const busId = row.getAttribute('data-bus-id').toLowerCase();
+                const regNo = row.getAttribute('data-reg-no').toLowerCase();
+                if (busId.includes(query) || regNo.includes(query)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        };
+
+        window.approveForCharging = function() {
+            requireRole(['cleaner']);
+            const checkboxes = document.querySelectorAll('.clean-checkbox:checked');
+            if (checkboxes.length === 0) {
+                showAlert('cleaner', 'error', 'No buses selected for approval.');
+                return;
+            }
+
+            let approvedIds = [];
+            checkboxes.forEach(cb => {
+                let id = sanitizeInput(cb.value);
+                if (localWorkflowState[id]) {
+                    localWorkflowState[id].cleanApproved = true;
+                    approvedIds.push(id);
+                }
+            });
+
+            saveState();
+
+            const busesText = approvedIds.length > 3
+                ? `${approvedIds.length} buses`
+                : `Bus(es) ${approvedIds.join(', ')}`;
+
+            initCleanerView();
+            const annDiv = document.getElementById('cleaner-announcement');
+            annDiv.style.display = 'block';
+            annDiv.innerHTML = `📢 <strong>Announcement:</strong> ${sanitizeInput(busesText)} have been marked as cleaned and are now forwarded to the Charging Depot for power-up!`;
+            annDiv.style.color = 'var(--status-safe)';
+        };
+
+        // --- SCHEDULER LOGIC ---
+        function initSchedulerView() {
+            requireRole(['scheduler']);
+            const fleet = window.getMergedFleet();
+            const pool = fleet.filter(b => b.chargeApproved && b.cleanApproved && !b.scheduleAssigned);
+            document.getElementById('pool-count').innerText = pool.length;
+
+            const scheduleSelect = document.getElementById('scheduler-route-select');
+            scheduleSelect.innerHTML = '<option value="">-- Choose Schedule (Route) --</option>';
+
+            const assignedSchedules = Object.values(localWorkflowState).map(s => s.scheduleAssigned).filter(Boolean);
+
+            window.SCHEDULES.forEach(sch => {
+                const routeInfo = window.ROUTES.find(r => r.id === sch.route);
+                const routeDiff = routeInfo ? routeInfo.category : 'Moderate';
+                const [h, m] = (sch.departure || "00:00").split(':').map(Number);
+                const mins = (h || 0) * 60 + (m || 0);
+
+                let ts = 'Peak';
+                if (mins < 420) ts = 'Normal';
+                else if (mins >= 420 && mins < 600) ts = 'Extreme Peak';
+                else if (mins >= 960 && mins < 1200) ts = 'Extreme Peak';
+
+                if (routeDiff === 'Complex') sch.allowedCats = ['A'];
+                else if (routeDiff === 'Simple' && ts === 'Normal') sch.allowedCats = ['A', 'B', 'C'];
+                else sch.allowedCats = ['A', 'B'];
+            });
+
+            window.SCHEDULES.filter(s => !assignedSchedules.includes(s.id)).forEach(sch => {
+                const opt = document.createElement('option');
+                opt.value = sanitizeInput(sch.id);
+                opt.text = `${sch.id} | Route ${sch.route} | Req: ${sch.singleChargeReq}km | Cat: ${sch.allowedCats.join(', ')}`;
+                scheduleSelect.appendChild(opt);
+            });
+
+            const driverSelect = document.getElementById('scheduler-driver-select');
+            driverSelect.innerHTML = '<option value="">-- Choose Driver --</option>';
+
+            const allDrivers = Array.from(new Set(window.FLEET.map(b => b.driver).filter(Boolean))).sort();
+            const assignedDrivers = Object.values(localWorkflowState).map(s => s.assignedDriver).filter(Boolean);
+
+            // Store available drivers for use in evaluateBestBus
+            window.availableDrivers = allDrivers.filter(d => !assignedDrivers.includes(d));
+
+            window.availableDrivers.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = sanitizeInput(d);
+                opt.text = d;
+                driverSelect.appendChild(opt);
+            });
+        }
+
+        window.onScheduleSelected = function() {
+            requireRole(['scheduler']);
+            evaluateBestBus();
+        };
+
+        window.evaluateBestBus = function() {
+            requireRole(['scheduler']);
+            const scheduleId = sanitizeInput(document.getElementById('scheduler-route-select').value);
+            const resultBox = document.getElementById('auto-assignment-result');
+            const assignBtn = document.getElementById('final-assign-btn');
+            const driverSelect = document.getElementById('scheduler-driver-select');
+
+            if (!scheduleId) {
+                resultBox.style.display = 'none';
+                assignBtn.disabled = true;
+                return;
+            }
+
+            const schedule = window.SCHEDULES.find(s => s.id === scheduleId);
+            if(!schedule) return;
+
+            const fleet = window.getMergedFleet();
+            const pool = fleet.filter(b => b.chargeApproved && b.cleanApproved && !b.scheduleAssigned);
+
+            const activeCats = schedule.allowedCats;
+
+            let validBuses = pool.filter(b => activeCats.includes(b.cat));
+            validBuses = validBuses.filter(b => b.actualRange >= schedule.singleChargeReq);
+
+            if (validBuses.length === 0) {
+                resultBox.style.display = 'block';
+                const safeCats = sanitizeInput(activeCats.join(', '));
+                resultBox.innerHTML = `<p style="color:var(--status-error); font-weight:700; font-size:1.05rem; margin:0;">&#9888; No bus available for this route! No ready bus meets both range (&ge;${schedule.singleChargeReq} km) and category ([${safeCats}]) requirements.</p>`;
+                assignBtn.disabled = true;
+                window.currentBestBusId = null;
+                return;
+            }
+
+            validBuses.sort((a,b) => (a.actualRange - schedule.singleChargeReq) - (b.actualRange - schedule.singleChargeReq));
+            validBuses.sort((a,b) => {
+                const rank = { 'C': 1, 'B': 2, 'A': 3 };
+                return rank[a.cat] - rank[b.cat];
+            });
+
+            const bestBus = validBuses[0];
+            window.currentBestBusId = bestBus.id;
+
+            resultBox.style.display = 'block';
+
+            const safeBestBusId = sanitizeInput(bestBus.id);
+            const safeBestBusReg = sanitizeInput(bestBus.regNo);
+            const safeCat = sanitizeInput(bestBus.cat);
+            const safeActiveCats = sanitizeInput(activeCats.join(', '));
+
+            resultBox.innerHTML = `
+                <div style="font-weight:600; font-size:1.05rem; margin-bottom:0.25rem;">
+                    &#127919; Recommended: Bus ${safeBestBusId} <span style="font-weight:normal; color:var(--text-secondary);">(${safeBestBusReg})</span>
+                </div>
+                <div style="font-size:0.9rem; color:var(--text-secondary); line-height:1.4;">
+                    <strong>Reasoning:</strong> Matches Category <strong>${safeCat}</strong> (Allowed: ${safeActiveCats}).
+                    Actual range of <strong>${bestBus.actualRange} km</strong> comfortably fulfills route requirement of <strong>${schedule.singleChargeReq} km</strong>
+                    with an optimal safety buffer of +${(bestBus.actualRange - schedule.singleChargeReq).toFixed(1)} km.
+                    ${bestBus.driver ? `<br><strong>Default Driver:</strong> ${sanitizeInput(bestBus.driver)} (auto-selected, changeable below).` : ''}
+                </div>
+            `;
+
+            assignBtn.disabled = false;
+
+            // Auto-select the bus's default driver
+            if (bestBus.driver) {
+                let driverFound = false;
+                for (let i = 0; i < driverSelect.options.length; i++) {
+                    if (driverSelect.options[i].value === bestBus.driver) {
+                        driverSelect.selectedIndex = i;
+                        driverFound = true;
+                        break;
+                    }
+                }
+                // If the bus's default driver isn't in the available list, add them at the top
+                if (!driverFound) {
+                    const opt = document.createElement('option');
+                    opt.value = sanitizeInput(bestBus.driver);
+                    opt.text = bestBus.driver + ' (Default)';
+                    driverSelect.insertBefore(opt, driverSelect.options[1]);
+                    driverSelect.selectedIndex = 1;
+                }
+            } else {
+                // No default driver — select the first available driver if any
+                driverSelect.selectedIndex = driverSelect.options.length > 1 ? 1 : 0;
+            }
+        };
+
+        window.finalizeAssignment = function() {
+            requireRole(['scheduler']);
+            const scheduleId = sanitizeInput(document.getElementById('scheduler-route-select').value);
+            const driverName = sanitizeInput(document.getElementById('scheduler-driver-select').value);
+            const busId = window.currentBestBusId;
+
+            if (!scheduleId || !driverName || !busId) {
+                showAlert('scheduler', 'error', 'Please ensure a route, driver, and valid bus are selected.');
+                return;
+            }
+
+            if (localWorkflowState[busId]) {
+                localWorkflowState[busId].scheduleAssigned = scheduleId;
+                localWorkflowState[busId].assignedDriver = driverName;
+                saveState();
+            }
+
+            showAlert('scheduler', 'success', `Success! Bus ${busId} dynamically allocated to Route Schedule ${scheduleId} with Driver ${driverName}.`);
+
+            document.getElementById('auto-assignment-result').style.display = 'none';
+            document.getElementById('final-assign-btn').disabled = true;
+            window.currentBestBusId = null;
+            initSchedulerView();
+        };
+    };
+</script>
+</body>
+</html>
+
