@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -146,7 +147,8 @@
             font-size: 0.95rem;
         }
 
-        input[type="text"], select {
+        input[type="text"],
+        select {
             width: 100%;
             padding: 0.75rem 1rem;
             border: 1px solid var(--border-subtle);
@@ -159,7 +161,8 @@
             transition: border-color 0.2s, box-shadow 0.2s;
         }
 
-        input[type="text"]:focus, select:focus {
+        input[type="text"]:focus,
+        select:focus {
             outline: none;
             border-color: var(--brand-primary);
             box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.15);
@@ -265,197 +268,203 @@
         }
     </style>
 </head>
+
 <body>
 
-<div class="container">
-    <div class="header-top">
-        <span class="badge">Database 3: Charging Incharge</span>
-        <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">☀️ Light</button>
+    <div class="container">
+        <div class="header-top">
+            <span class="badge">Database 3: Charging Incharge</span>
+            <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">☀️ Light</button>
+        </div>
+
+        <div class="card">
+            <h1>Charging Infrastructure Operations</h1>
+            <p class="subtitle">
+                Chandapura Depot 44. Buses that have passed Entry Recorder await charging approval here. Select a bus
+                and submit approval. When BOTH Cleaner AND Charging Incharge approve, the bus automatically shifts to
+                the Scheduler.
+            </p>
+
+            <!-- Dynamic Success / Error Alert Message -->
+            <div id="statusAlert" class="alert"></div>
+
+            <!-- 1. Search Bar for Easy Access directly above dropdown -->
+            <div class="form-group">
+                <label for="bus-search">Search Bus</label>
+                <input type="text" id="bus-search"
+                    placeholder="Type bus ID or registration (e.g., BM221, KA51AH8184)..."
+                    oninput="filterBusDropdown()">
+            </div>
+
+            <!-- 2. Dropdown to select the bus -->
+            <div class="form-group">
+                <label for="bus-select">Select Bus to Approve (<span id="pending-count">0</span> available)</label>
+                <select id="bus-select" onchange="onBusSelected()">
+                    <option value="">-- Choose Bus to Approve --</option>
+                </select>
+            </div>
+
+            <!-- 3. Approval Confirmation Indicator -->
+            <div class="status-pill">
+                <span>Action on Submit:</span>
+                <strong>✓ Approve Charging Status</strong>
+            </div>
+
+            <!-- 4. Submit and Logout Buttons at the bottom -->
+            <div class="btn-group">
+                <button id="submit-btn" onclick="submitApproval()" disabled>Submit</button>
+                <button class="login-btn" onclick="goToLogin()">Logout</button>
+            </div>
+
+        </div>
     </div>
 
-    <div class="card">
-        <h1>Charging Infrastructure Operations</h1>
-        <p class="subtitle">
-            Chandapura Depot 44. Buses that have passed Entry Recorder await charging approval here. Select a bus and submit approval. When BOTH Cleaner AND Charging Incharge approve, the bus automatically shifts to the Scheduler.
-        </p>
-
-        <!-- Dynamic Success / Error Alert Message -->
-        <div id="statusAlert" class="alert"></div>
-
-        <!-- 1. Search Bar for Easy Access directly above dropdown -->
-        <div class="form-group">
-            <label for="bus-search">Search Bus</label>
-            <input type="text" id="bus-search" placeholder="Type bus ID or registration (e.g., BM221, KA51AH8184)..." oninput="filterBusDropdown()">
-        </div>
-
-        <!-- 2. Dropdown to select the bus -->
-        <div class="form-group">
-            <label for="bus-select">Select Bus to Approve (<span id="pending-count">0</span> available)</label>
-            <select id="bus-select" onchange="onBusSelected()">
-                <option value="">-- Choose Bus to Approve --</option>
-            </select>
-        </div>
-
-        <!-- 3. Approval Confirmation Indicator -->
-        <div class="status-pill">
-            <span>Action on Submit:</span>
-            <strong>✓ Approve Charging Status</strong>
-        </div>
-
-        <!-- 4. Submit and Logout Buttons at the bottom -->
-        <div class="btn-group">
-            <button id="submit-btn" onclick="submitApproval()" disabled>Submit</button>
-            <button class="login-btn" onclick="goToLogin()">Logout</button>
-        </div>
-
-    </div>
-</div>
-
-<script>
-    // --- THEME MANAGEMENT ---
-    function toggleTheme() {
-        const body = document.body;
-        const btn = document.getElementById('theme-btn');
-        if (body.classList.contains('dark-mode')) {
-            body.classList.remove('dark-mode');
-            btn.innerText = '☀️ Light';
-            localStorage.setItem('fleet_theme', 'light');
-        } else {
-            body.classList.add('dark-mode');
-            btn.innerText = '🌙 Dark';
-            localStorage.setItem('fleet_theme', 'dark');
-        }
-    }
-    if (localStorage.getItem('fleet_theme') === 'dark') {
-        document.body.classList.add('dark-mode');
-        const btn = document.getElementById('theme-btn');
-        if (btn) btn.innerText = '🌙 Dark';
-    }
-
-    // --- POPULATE & FILTER BUS DROPDOWN ---
-    let pendingBuses = [];
-
-    function loadPendingBuses() {
-        if (!window.FleetDB || !window.FleetDB.Charging) {
-            console.error('FleetDB not ready');
-            return;
-        }
-        pendingBuses = window.FleetDB.Charging.getPending();
-        document.getElementById('pending-count').innerText = pendingBuses.length;
-        renderDropdown(pendingBuses);
-    }
-
-    function renderDropdown(buses) {
-        const select = document.getElementById('bus-select');
-        const currentVal = select.value;
-        select.innerHTML = '';
-
-        const defaultOpt = document.createElement('option');
-        defaultOpt.value = '';
-        defaultOpt.textContent = buses.length > 0
-            ? `-- Choose Bus (${buses.length} pending) --`
-            : '-- Bus not available in current queue --';
-        select.appendChild(defaultOpt);
-
-        buses.forEach(b => {
-            const opt = document.createElement('option');
-            opt.value = b.busId;
-            opt.textContent = `${b.busId} | ${b.regNo} | Cat ${b.cat} (${b.actualRange} km)`;
-            select.appendChild(opt);
-        });
-
-        // Re-select if still valid
-        if (currentVal && buses.some(b => b.busId === currentVal)) {
-            select.value = currentVal;
-            document.getElementById('submit-btn').disabled = false;
-        } else {
-            select.value = '';
-            document.getElementById('submit-btn').disabled = true;
-        }
-    }
-
-    function filterBusDropdown() {
-        const query = document.getElementById('bus-search').value.trim().toLowerCase();
-        if (!query) {
-            renderDropdown(pendingBuses);
-            return;
-        }
-        const filtered = pendingBuses.filter(b =>
-            b.busId.toLowerCase().includes(query) ||
-            b.regNo.toLowerCase().includes(query)
-        );
-        renderDropdown(filtered);
-        // Auto-select first match if available
-        const select = document.getElementById('bus-select');
-        if (filtered.length > 0) {
-            select.value = filtered[0].busId;
-            onBusSelected();
-        } else {
-            select.value = '';
-            document.getElementById('submit-btn').disabled = true;
-        }
-    }
-
-    function onBusSelected() {
-        const select = document.getElementById('bus-select');
-        const submitBtn = document.getElementById('submit-btn');
-        submitBtn.disabled = !select.value;
-    }
-
-    // --- SUBMIT APPROVAL ---
-    function submitApproval() {
-        const select = document.getElementById('bus-select');
-        const busId = select.value;
-        if (!busId) {
-            showAlert('Please select a bus first.', 'error');
-            return;
-        }
-
-        try {
-            // 1. Approve bus in ChargingDB (checkAndEnroll will run automatically)
-            const approvedRecord = window.FleetDB.Charging.approveBus(busId, 'Charging Incharge Officer');
-
-            // 2. Check if bus has now entered Scheduler ready pool
-            const schedulerData = window.FleetDB.Scheduler.init();
-            const enteredScheduler = schedulerData[busId] !== undefined;
-
-            // 3. Display success message
-            if (enteredScheduler) {
-                showAlert(`✓ Bus ${approvedRecord.busId} (${approvedRecord.regNo}) charging approved! Both Cleaner AND Charging approvals complete → Bus forwarded to Scheduler Ready Pool.`, 'success');
+    <script>
+        // --- THEME MANAGEMENT ---
+        function toggleTheme() {
+            const body = document.body;
+            const btn = document.getElementById('theme-btn');
+            if (body.classList.contains('dark-mode')) {
+                body.classList.remove('dark-mode');
+                btn.innerText = '☀️ Light';
+                localStorage.setItem('fleet_theme', 'light');
             } else {
-                showAlert(`✓ Bus ${approvedRecord.busId} (${approvedRecord.regNo}) charging approved! Waiting for Cleaner approval before forwarding to Scheduler.`, 'success');
+                body.classList.add('dark-mode');
+                btn.innerText = '🌙 Dark';
+                localStorage.setItem('fleet_theme', 'dark');
+            }
+        }
+        if (localStorage.getItem('fleet_theme') === 'dark') {
+            document.body.classList.add('dark-mode');
+            const btn = document.getElementById('theme-btn');
+            if (btn) btn.innerText = '🌙 Dark';
+        }
+
+        // --- POPULATE & FILTER BUS DROPDOWN ---
+        let pendingBuses = [];
+
+        function loadPendingBuses() {
+            if (!window.FleetDB || !window.FleetDB.Charging) {
+                console.error('FleetDB not ready');
+                return;
+            }
+            pendingBuses = window.FleetDB.Charging.getPending();
+            document.getElementById('pending-count').innerText = pendingBuses.length;
+            renderDropdown(pendingBuses);
+        }
+
+        function renderDropdown(buses) {
+            const select = document.getElementById('bus-select');
+            const currentVal = select.value;
+            select.innerHTML = '';
+
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = buses.length > 0
+                ? `-- Choose Bus (${buses.length} pending) --`
+                : '-- Bus not available in current queue --';
+            select.appendChild(defaultOpt);
+
+            buses.forEach(b => {
+                const opt = document.createElement('option');
+                opt.value = b.busId;
+                opt.textContent = `${b.busId} | ${b.regNo} | Cat ${b.cat} (${b.actualRange} km)`;
+                select.appendChild(opt);
+            });
+
+            // Re-select if still valid
+            if (currentVal && buses.some(b => b.busId === currentVal)) {
+                select.value = currentVal;
+                document.getElementById('submit-btn').disabled = false;
+            } else {
+                select.value = '';
+                document.getElementById('submit-btn').disabled = true;
+            }
+        }
+
+        function filterBusDropdown() {
+            const query = document.getElementById('bus-search').value.trim().toLowerCase();
+            if (!query) {
+                renderDropdown(pendingBuses);
+                return;
+            }
+            const filtered = pendingBuses.filter(b =>
+                b.busId.toLowerCase().includes(query) ||
+                b.regNo.toLowerCase().includes(query)
+            );
+            renderDropdown(filtered);
+            // Auto-select first match if available
+            const select = document.getElementById('bus-select');
+            if (filtered.length > 0) {
+                select.value = filtered[0].busId;
+                onBusSelected();
+            } else {
+                select.value = '';
+                document.getElementById('submit-btn').disabled = true;
+            }
+        }
+
+        function onBusSelected() {
+            const select = document.getElementById('bus-select');
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = !select.value;
+        }
+
+        // --- SUBMIT APPROVAL ---
+        function submitApproval() {
+            const select = document.getElementById('bus-select');
+            const busId = select.value;
+            if (!busId) {
+                showAlert('Please select a bus first.', 'error');
+                return;
             }
 
-            // 4. Remove selected option from dropdown display
-            document.getElementById('bus-search').value = '';
-            loadPendingBuses();
+            try {
+                // 1. Approve bus in ChargingDB (checkAndEnroll will run automatically)
+                const approvedRecord = window.FleetDB.Charging.approveBus(busId, 'Charging Incharge Officer');
 
-        } catch (e) {
-            showAlert('Error recording approval: ' + e.message, 'error');
+                // 2. Check if bus has now entered Scheduler ready pool
+                const schedulerData = window.FleetDB.Scheduler.init();
+                const enteredScheduler = schedulerData[busId] !== undefined;
+
+                // 3. Display success message
+                if (enteredScheduler) {
+                    showAlert(`✓ Bus ${approvedRecord.busId} (${approvedRecord.regNo}) charging approved! Both Cleaner AND Charging approvals complete → Bus forwarded to Scheduler Ready Pool.`, 'success');
+                } else {
+                    showAlert(`✓ Bus ${approvedRecord.busId} (${approvedRecord.regNo}) charging approved! Waiting for Cleaner approval before forwarding to Scheduler.`, 'success');
+                }
+
+                // 4. Remove selected option from dropdown display
+                document.getElementById('bus-search').value = '';
+                loadPendingBuses();
+
+            } catch (e) {
+                showAlert('Error recording approval: ' + e.message, 'error');
+            }
         }
-    }
 
-    function showAlert(message, type) {
-        const alertBox = document.getElementById('statusAlert');
-        alertBox.className = 'alert ' + type;
-        alertBox.textContent = message;
-        alertBox.style.display = 'block';
-    }
+        function showAlert(message, type) {
+            const alertBox = document.getElementById('statusAlert');
+            alertBox.className = 'alert ' + type;
+            alertBox.textContent = message;
+            alertBox.style.display = 'block';
+        }
 
-    function goToLogin() {
-        window.location.href = '!DOCTYPE html.html';
-    }
+        function goToLogin() {
+            window.location.href = 'index.html';
+        }
 
-    // Initialize on page load
-    window.addEventListener('DOMContentLoaded', () => {
-        loadPendingBuses();
-    });
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadPendingBuses();
+        });
 
-    // Listen to reactive updates across tabs/windows
-    window.addEventListener('fleet-db-updated', () => {
-        loadPendingBuses();
-    });
-</script>
+        // Listen to reactive updates across tabs/windows
+        window.addEventListener('fleet-db-updated', () => {
+            loadPendingBuses();
+        });
+    </script>
 
 </body>
+
 </html>
