@@ -51,7 +51,7 @@ code{background:var(--bg);padding:2px 6px;border-radius:6px}
 <body><div class="wrap" id="app"></div><div id="toast"></div>
 <script>
 const CITIES=[["Bengaluru",12.97,77.59,"KA"],["Chennai",13.08,80.27,"TN"],["Hyderabad",17.38,78.48,"TS"],["Mumbai",19.08,72.88,"MH"],["Pune",18.52,73.86,"MH"],["Delhi",28.61,77.21,"DL"],["Kolkata",22.57,88.36,"WB"],["Kochi",9.93,76.27,"KL"],["Ahmedabad",23.02,72.57,"GJ"],["Jaipur",26.91,75.79,"RJ"],["Other (enter lat / lon)",0,0,"XX"]];
-const ROLES=[["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging Incharge"],["sched","Scheduler"],["mgr","Depot Manager"]];
+const ROLES=[["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging Incharge"],["sched","Scheduler"]];
 const OUTLINE=[[74.5,37],[77,35.5],[79,34],[78.5,31],[81,30],[80,28.5],[84,27.5],[88,27],[88.5,26.5],[92,27],[95,28.5],[97,28],[96,26],[94,24],[93,22],[92.5,23],[91.5,24],[89,22],[87,21],[85,19.5],[82.5,17],[80.2,15.5],[80.3,13],[79.8,10.5],[78,8.5],[77.5,8],[76.5,9],[75,12],[74,15],[73,17.5],[72.8,20],[72.5,21.5],[70,21],[69,22.5],[70.5,23],[68.2,23.7],[70,25],[71,27],[74,31],[74.5,34]];
 const KEY="sfos_multi_v2";
 let S,auth=null,ui={tab:"net",depot:"",q:"",f:"pending",xf:""};
@@ -60,6 +60,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 const cid=s=>String(s).replace(/[^A-Za-z0-9_-]/g,"");
 const rpw=()=>{const c="abcdefghjkmnpqrstuvwxyz23456789";let o="";for(let i=0;i<8;i++)o+=c[Math.floor(Math.random()*c.length)];return o};
 const lines=t=>[...new Set(String(t).split(/\n/).map(x=>x.trim()).filter(Boolean))];
+const busLines=t=>String(t).split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
 const dep=id=>S.depots.find(d=>d.id===id);
 const dn=id=>dep(id)?dep(id).name:"(removed)";
 const bd=id=>S.buses.filter(b=>b.loc===id);
@@ -83,7 +84,7 @@ function seed(){
     S.depots.push(d);const bs=mkBuses(d,x[4],x[5],x[6],x[7]);flow(d,bs,...x[8]);S.buses.push(...bs)});
   logm("Demo network loaded: 3 depots, 212 buses");
 }
-function load(){try{const r=localStorage.getItem(KEY);if(r){S=JSON.parse(r);S.depots.forEach(d=>ROLES.forEach(x=>{if(!d.users[x[0]])d.users[x[0]]={u:d.id+"-"+x[0],p:rpw()}}));return}}catch(e){}seed()}
+function load(){try{const r=localStorage.getItem(KEY);if(r){S=JSON.parse(r);S.depots.forEach(d=>{d.users=d.users||{};delete d.users.mgr;ROLES.forEach(x=>{if(!d.users[x[0]])d.users[x[0]]={u:d.id+"-"+x[0],p:rpw()}})});save();return}}catch(e){}seed()}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function logm(m,...ds){S.log.unshift({t:new Date().toLocaleString(),m,d:ds});S.log=S.log.slice(0,300)}
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove("on"),2400)}
@@ -119,22 +120,35 @@ function txRow(id){tx(id,$("x_"+id).value)}
 function txForm(){const id=cid($("t_id").value),b=S.buses.find(x=>x.id.toLowerCase()===id.toLowerCase());if(!b)return toast("Bus code not found");tx(b.id,$("t_to").value)}
 function addDepot(){
   const name=$("f_name").value.trim();if(!name)return toast("Enter a depot name");
+  const n=Number($("f_count").value);if(!Number.isInteger(n)||n<1||n>500)return toast("Enter the number of buses (1–500)");
+  const parsed=parseBusRows($("f_buses").value,n);if(parsed.error)return toast(parsed.error);
   const city=$("f_city").value.trim()||name,lat=0,lon=0;
   const d=mkDepot({name,city,lat,lon,routes:lines($("f_sched").value),drivers:lines($("f_drv").value)},rpw);
-  const n=parseInt($("f_count").value)||0,skipped=0;if(n<1||n>500)return toast("Enter the number of buses (1–500)");
-  const bs=[];let bad=0;lines($("f_buses").value).forEach(l=>{const p=l.split(/[,\s\t]+/).filter(Boolean),code=cid(p[0]||"");
-    if(!code||S.buses.some(b=>b.id.toLowerCase()===code.toLowerCase())||bs.some(b=>b.id.toLowerCase()===code.toLowerCase())){bad++;return}
-    bs.push({id:code,reg:esc(p[1]||"-"),entry:false,clean:false,charge:false,route:"",driver:"",home:d.id,loc:d.id})});
-  if(bs.length!==n)return toast("Number of buses is "+n+" but "+bs.length+" valid, unique bus codes were pasted"+(bad?" ("+bad+" duplicate or invalid lines)":"")+". They must match.");
-  if(!bs.length)return toast("No valid buses to add");
+  const bs=parsed.buses.map(b=>({...b,entry:false,clean:false,charge:false,route:"",driver:"",home:d.id,loc:d.id}));
   S.depots.push(d);S.buses.push(...bs);logm("New depot added: "+d.name+" ("+d.city+") with "+bs.length+" buses, "+d.routes.length+" schedules, "+d.drivers.length+" drivers",d.id);
-  save();ui={tab:"logins",depot:d.id,q:"",f:"pending"};render();toast("Depot added"+(skipped?" ("+skipped+" duplicate bus codes skipped)":"")+" – 4 stage logins + manager login generated");
+  save();ui={tab:"logins",depot:d.id,q:"",f:"pending"};render();toast("Depot added – 4 role logins generated");
+}
+function parseBusRows(text,expected){
+  const rows=busLines(text);
+  if(rows.length!==expected)return {error:"Enter exactly "+expected+" bus lines; "+rows.length+" pasted."};
+  const ids=new Set(S.buses.map(b=>b.id.toLowerCase())),regs=new Set(S.buses.map(b=>b.reg.toLowerCase())),buses=[];
+  for(let i=0;i<rows.length;i++){
+    const parts=rows[i].split(",");
+    if(parts.length!==2)return {error:"Bus line "+(i+1)+" must be BUS CODE, REGISTRATION."};
+    const code=parts[0].trim(),reg=parts[1].trim(),safeCode=cid(code),safeReg=esc(reg);
+    if(!code||safeCode!==code||!reg)return {error:"Bus line "+(i+1)+" needs a valid bus code and registration."};
+    if(ids.has(code.toLowerCase()))return {error:"Bus code "+code+" is duplicated or already exists."};
+    if(regs.has(safeReg.toLowerCase()))return {error:"Registration "+reg+" is duplicated or already exists."};
+    ids.add(code.toLowerCase());regs.add(safeReg.toLowerCase());buses.push({id:code,reg:safeReg});
+  }
+  return {buses};
 }
 function addRes(kind){
   const d=dep(curD());
-  if(kind==="b"){let n=0,sk=0;lines($("m_b").value).forEach(l=>{const p=l.split(/[,\s\t]+/).filter(Boolean),code=cid(p[0]||"");if(!code)return;
-    if(S.buses.some(b=>b.id.toLowerCase()===code.toLowerCase())){sk++;return}S.buses.push({id:code,reg:esc(p[1]||"-"),entry:false,clean:false,charge:false,route:"",driver:"",home:d.id,loc:d.id});n++});
-    logm(n+" buses added to "+d.name,d.id);toast(n+" added"+(sk?", "+sk+" duplicates skipped":""))}
+  if(kind==="b"){const count=Number($("m_count").value);if(!Number.isInteger(count)||count<1||count>500)return toast("Enter the number of buses (1–500)");
+    const parsed=parseBusRows($("m_b").value,count);if(parsed.error)return toast(parsed.error);
+    S.buses.push(...parsed.buses.map(b=>({...b,entry:false,clean:false,charge:false,route:"",driver:"",home:d.id,loc:d.id})));
+    logm(count+" buses added to "+d.name,d.id);toast(count+" buses added")}
   if(kind==="s"){const a=lines($("m_s").value).filter(x=>!d.routes.includes(x));d.routes.push(...a);logm(a.length+" schedules added to "+d.name,d.id);toast(a.length+" added")}
   if(kind==="d"){const a=lines($("m_d").value).filter(x=>!d.drivers.includes(x));d.drivers.push(...a);logm(a.length+" drivers added to "+d.name,d.id);toast(a.length+" added")}
   save();render();
@@ -229,14 +243,14 @@ function addView(){
   return `<div class="card f"><h2>Add a New Depot</h2><p class="sub l">Enter the depot details by hand. Buses, schedule codes and drivers entered here show up immediately, and logins for the depot are generated automatically.</p>
   <div class="g2"><div><label>Depot name</label><input id="f_name" placeholder="e.g., Yeshwanthpur Depot"></div>
   <div><label>City / location</label><input id="f_city" placeholder="e.g., Bengaluru"></div></div>
-  <div class="g2"><div><label>Number of buses <span class="hint">(required)</span></label><input id="f_count" type="number" min="1" max="500" placeholder="e.g., 40" oninput="cnt()"></div></div>
+  <div class="g2"><div><label>Number of buses <span class="hint">(required)</span></label><input id="f_count" type="number" min="1" max="500" step="1" placeholder="e.g., 40" oninput="cnt()"></div></div>
   <label>Paste exact buses <span class="hint">(required) – one per line: BUS CODE, REGISTRATION. The number of lines must match the number of buses above.</span></label><textarea id="f_buses" oninput="cnt()" placeholder="BM221, KA51AH8184&#10;BM222, KA51AH8221"></textarea><p class="hint" id="f_cnt">0 of 0 buses entered</p>
   <div class="g2"><div><label>Schedule codes <span class="hint">– one per line</span></label><textarea id="f_sched" placeholder="SCH-101 Majestic&#10;SCH-102 Silk Board"></textarea></div><div><label>Driver names <span class="hint">– one per line</span></label><textarea id="f_drv" placeholder="Ramesh K&#10;Imran Pasha"></textarea></div></div>
   <div class="tools"><button class="btn" onclick="addDepot()">Add depot &amp; generate logins</button></div></div>`;
 }
 function loginsView(){
   const d=dep(curD());
-  return `<div class="card"><h2>Logins · ${esc(d.name)}</h2><p class="sub l">Each depot gets four working logins (Entry Recorder, Cleaner, Charging Incharge, Scheduler) plus a view-only Depot Manager login. Every user signs in at the login screen and sees only this depot.</p>
+  return `<div class="card"><h2>Logins · ${esc(d.name)}</h2><p class="sub l">Each depot gets four logins: Entry Recorder, Cleaner, Charging Incharge and Scheduler. Every user signs in at the login screen and sees only this depot.</p>
   <div class="tw"><table><thead><tr><th>Role</th><th>User ID</th><th>Password</th><th></th></tr></thead><tbody>${ROLES.map(r=>`<tr><td>${r[1]}</td><td><code>${d.users[r[0]].u}</code></td><td><code>${d.users[r[0]].p}</code></td><td><button class="btn sm s" onclick="regen('${r[0]}')">Regenerate</button></td></tr>`).join("")}</tbody></table></div>
   </div>`;
 }
@@ -244,7 +258,7 @@ function manage(){
   const d=dep(curD()),others=S.depots.filter(x=>x.id!==d.id);
   const chips=(l,k)=>`<div class="chips">${l.map((x,i)=>`<span class="chip">${esc(x)}<a onclick="remRes('${k}',${i})" title="Remove">×</a></span>`).join("")||'<span class="hint">None yet</span>'}</div>`;
   return `<div class="card f"><h2>Manage · ${esc(d.name)}</h2><p class="sub l">Add buses, schedule codes and drivers at any time. Changes appear in every view straight away.</p>
-  <div class="g2"><div><label>Add buses <span class="hint">BUS CODE, REGISTRATION per line</span></label><textarea id="m_b"></textarea><button class="btn sm" onclick="addRes('b')">Add buses</button></div>
+  <div class="g2"><div><label>Number of buses</label><input id="m_count" type="number" min="1" max="500" step="1" oninput="cnt('m')" placeholder="e.g., 5"><label>Paste exact buses <span class="hint">BUS CODE, REGISTRATION per line</span></label><textarea id="m_b" oninput="cnt('m')"></textarea><p class="hint" id="m_cnt">0 of 0 buses entered</p><button class="btn sm" onclick="addRes('b')">Add buses</button></div>
   <div><label>Add schedule codes</label><textarea id="m_s"></textarea><button class="btn sm" onclick="addRes('s')">Add schedules</button>${chips(d.routes,"s")}</div>
   <div><label>Add drivers</label><textarea id="m_d"></textarea><button class="btn sm" onclick="addRes('d')">Add drivers</button>${chips(d.drivers,"d")}</div></div></div>
   <div class="card f"><h3>Transfer a bus to another depot</h3><div class="g2"><div><label>Bus code (currently at ${esc(d.name)})</label><input id="t_id" placeholder="e.g., BM221"></div><div><label>Destination depot</label><select id="t_to">${others.map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join("")}</select></div></div>
@@ -268,7 +282,7 @@ function login(){
   $("app").innerHTML=`<div class="top"><span></span>${thBtn()}</div><div class="card login"><h2 style="text-align:center">Smart Fleet OS Login</h2><p class="sub">Multi-depot console</p>
   <label for="u">User ID</label><input id="u" autocomplete="username" autocapitalize="off"><label for="p">Password</label><input id="p" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
   <div class="err" id="err"></div><button class="btn" style="width:100%;padding:13px" onclick="doLogin()">Login</button>
-  <p class="sub" style="margin-top:14px;font-size:12px">Admin demo: admin / admin123 · Every depot has its own logins (see Logins tab). Demo depots use password demo1234, e.g. chandapura-entry, chandapura-clean, chandapura-charge, chandapura-sched, chandapura-mgr.</p></div>`;
+  <p class="sub" style="margin-top:14px;font-size:12px">Admin demo: admin / admin123 · Every depot has four role logins (see Logins tab). Demo depots use password demo1234, e.g. chandapura-entry, chandapura-clean, chandapura-charge, chandapura-sched.</p></div>`;
 }
 function doLogin(){
   const u=$("u").value.trim().toLowerCase(),p=$("p").value;
@@ -277,7 +291,7 @@ function doLogin(){
   $("err").textContent="Invalid user ID or password.";
 }
 function logout(){auth=null;render()}
-function cnt(){const n=parseInt($("f_count").value)||0,k=lines($("f_buses").value).length;$("f_cnt").textContent=k+" of "+n+" buses entered"+(n&&k===n?" ✓":"")}
+function cnt(prefix="f"){const n=Number($(prefix+"_count").value)||0,k=busLines($(prefix==="f"?"f_buses":"m_b").value).length;$(prefix+"_cnt").textContent=k+" of "+n+" buses entered"+(n&&k===n?" ✓":"")}
 function render(){
   if(!auth)return login();
   if(auth.role!=="admin"&&!dep(auth.depot))return logout();
