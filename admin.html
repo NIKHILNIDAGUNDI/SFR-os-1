@@ -51,7 +51,7 @@ code{background:var(--bg);padding:2px 6px;border-radius:6px}
 <body><div class="wrap" id="app"></div><div id="toast"></div>
 <script>
 const CITIES=[["Bengaluru",12.97,77.59,"KA"],["Chennai",13.08,80.27,"TN"],["Hyderabad",17.38,78.48,"TS"],["Mumbai",19.08,72.88,"MH"],["Pune",18.52,73.86,"MH"],["Delhi",28.61,77.21,"DL"],["Kolkata",22.57,88.36,"WB"],["Kochi",9.93,76.27,"KL"],["Ahmedabad",23.02,72.57,"GJ"],["Jaipur",26.91,75.79,"RJ"],["Other (enter lat / lon)",0,0,"XX"]];
-const ROLES=[["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging Incharge"],["sched","Scheduler"]];
+const ROLES=[["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging Incharge"],["sched","Scheduler"],["mgr","Depot Manager"]];
 const OUTLINE=[[74.5,37],[77,35.5],[79,34],[78.5,31],[81,30],[80,28.5],[84,27.5],[88,27],[88.5,26.5],[92,27],[95,28.5],[97,28],[96,26],[94,24],[93,22],[92.5,23],[91.5,24],[89,22],[87,21],[85,19.5],[82.5,17],[80.2,15.5],[80.3,13],[79.8,10.5],[78,8.5],[77.5,8],[76.5,9],[75,12],[74,15],[73,17.5],[72.8,20],[72.5,21.5],[70,21],[69,22.5],[70.5,23],[68.2,23.7],[70,25],[71,27],[74,31],[74.5,34]];
 const KEY="sfos_multi_v2";
 let S,auth=null,ui={tab:"net",depot:"",q:"",f:"pending",xf:""};
@@ -84,17 +84,18 @@ function seed(){
     S.depots.push(d);const bs=mkBuses(d,x[4],x[5],x[6],x[7]);flow(d,bs,...x[8]);S.buses.push(...bs)});
   logm("Demo network loaded: 3 depots, 212 buses");
 }
-function load(){try{const r=localStorage.getItem(KEY);if(r){S=JSON.parse(r);S.depots.forEach(d=>{d.users=d.users||{};delete d.users.mgr;ROLES.forEach(x=>{if(!d.users[x[0]])d.users[x[0]]={u:d.id+"-"+x[0],p:rpw()}})});save();return}}catch(e){}seed()}
+function load(){try{const r=localStorage.getItem(KEY);if(r){S=JSON.parse(r);S.depots.forEach(d=>{d.users=d.users||{};ROLES.forEach(x=>{if(!d.users[x[0]])d.users[x[0]]={u:d.id+"-"+x[0],p:rpw()}})});save();return}}catch(e){}seed()}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function logm(m,...ds){S.log.unshift({t:new Date().toLocaleString(),m,d:ds});S.log=S.log.slice(0,300)}
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove("on"),2400)}
 function stats(d){const c={n:0,entry:0,processing:0,ready:0,assigned:0,clean:0,charge:0};bd(d).forEach(b=>{c.n++;c[stage(b)]++;if(b.entry){if(!b.clean)c.clean++;if(!b.charge)c.charge++}});return c}
 const curD=()=>auth.role==="admin"?(dep(ui.depot)?ui.depot:(S.depots[0]||{}).id):auth.depot;
-const can=t=>auth.role==="admin"||auth.role===t;
+const can=t=>auth.role==="admin"||auth.role==="mgr"||auth.role===t;
 
 /* ---------- actions ---------- */
 function act(id,type){
   const b=S.buses.find(x=>x.id===id);if(!b)return;const d=b.loc;
+  if(auth.role!=="admin"&&b.loc!==auth.depot)return toast("You can only manage buses in your depot");
   const M={entry:()=>{b.entry=true;return id+" approved at Entry Recorder, forwarded to Cleaner + Charging"},
    unentry:()=>{b.entry=b.clean=b.charge=false;b.route=b.driver="";return id+" entry reverted"},
    clean:()=>{b.clean=true;return id+" cleaning approved"},unclean:()=>{b.clean=false;b.route=b.driver="";return id+" cleaning reverted"},
@@ -112,6 +113,7 @@ function bulk(kind){
 }
 function tx(id,to){
   const b=S.buses.find(x=>x.id===id);if(!b||!to||!dep(to))return toast("Choose a destination depot");
+  if(auth.role!=="admin"&&b.loc!==auth.depot)return toast("You can only transfer buses from your depot");
   const from=b.loc;if(from===to)return toast("Bus is already at that depot");
   b.loc=to;b.entry=b.clean=b.charge=false;b.route=b.driver="";
   logm(id+" transferred "+dn(from)+" → "+dn(to)+" (awaits Entry Recorder at "+dn(to)+")",from,to);save();render();toast(id+" sent to "+dn(to));
@@ -119,6 +121,7 @@ function tx(id,to){
 function txRow(id){tx(id,$("x_"+id).value)}
 function txForm(){const id=cid($("t_id").value),b=S.buses.find(x=>x.id.toLowerCase()===id.toLowerCase());if(!b)return toast("Bus code not found");tx(b.id,$("t_to").value)}
 function addDepot(){
+  if(auth.role!=="admin")return toast("Only the admin can create depots");
   const name=$("f_name").value.trim();if(!name)return toast("Enter a depot name");
   const n=Number($("f_count").value);if(!Number.isInteger(n)||n<1||n>500)return toast("Enter the number of buses (1–500)");
   const parsed=parseBusRows($("f_buses").value,n);if(parsed.error)return toast(parsed.error);
@@ -126,7 +129,7 @@ function addDepot(){
   const d=mkDepot({name,city,lat,lon,routes:lines($("f_sched").value),drivers:lines($("f_drv").value)},rpw);
   const bs=parsed.buses.map(b=>({...b,entry:false,clean:false,charge:false,route:"",driver:"",home:d.id,loc:d.id}));
   S.depots.push(d);S.buses.push(...bs);logm("New depot added: "+d.name+" ("+d.city+") with "+bs.length+" buses, "+d.routes.length+" schedules, "+d.drivers.length+" drivers",d.id);
-  save();ui={tab:"logins",depot:d.id,q:"",f:"pending"};render();toast("Depot added – 4 role logins generated");
+  save();ui={tab:"logins",depot:d.id,q:"",f:"pending"};render();toast("Depot added – 5 role logins generated");
 }
 function parseBusRows(text,expected){
   const rows=busLines(text);
@@ -157,10 +160,10 @@ function remRes(kind,i){
   const d=dep(curD()),list=kind==="s"?d.routes:d.drivers,v=list[i],inUse=bd(d.id).some(b=>(kind==="s"?b.route:b.driver)===v);
   if(inUse)return toast("In use by an assigned bus – unassign it first");list.splice(i,1);logm((kind==="s"?"Schedule ":"Driver ")+v+" removed from "+d.name,d.id);save();render();
 }
-function regen(role){const d=dep(curD());d.users[role].p=rpw();logm("Password regenerated for "+d.users[role].u,d.id);save();render();toast("New password generated")}
-function delDepot(){const d=dep(curD());if(!confirm("Delete "+d.name+" and every bus currently located there?"))return;
+function regen(role){const d=dep(curD());if(!d||!d.users[role])return toast("Login not found");d.users[role].p=rpw();logm("Password regenerated for "+d.users[role].u,d.id);save();render();toast("New password generated")}
+function delDepot(){if(auth.role!=="admin")return toast("Only the admin can delete depots");const d=dep(curD());if(!confirm("Delete "+d.name+" and every bus currently located there?"))return;
   S.buses=S.buses.filter(b=>b.loc!==d.id);S.depots=S.depots.filter(x=>x.id!==d.id);logm("Depot deleted: "+d.name);save();ui.tab="net";ui.depot="";render()}
-function reset(){if(!confirm("Reset the whole network to the demo set? Added depots will be lost."))return;seed();save();ui={tab:"net",depot:"",q:"",f:"pending"};render();toast("Demo data restored")}
+function reset(){if(auth.role!=="admin")return toast("Only the admin can reset the network");if(!confirm("Reset the whole network to the demo set? Added depots will be lost."))return;seed();save();ui={tab:"net",depot:"",q:"",f:"pending"};render();toast("Demo data restored")}
 
 /* ---------- views ---------- */
 function rowsFor(tab){
@@ -233,10 +236,10 @@ function net(){
   <div class="card"><div class="tw"><table style="min-width:520px"><thead><tr><th>Depot</th><th>City</th><th>Buses</th><th>Entry</th><th>Clean/Chg</th><th>Ready</th><th>Assigned</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
   ${locator()}`;
 }
-function locator(){return `<div class="card"><h3>Bus Locator</h3><p class="sub l">Type a bus code or registration to see which depot the bus is in right now.</p><div class="tools"><input id="lq" placeholder="e.g., BM221, TN100, KA51AH8184…" value="${esc(ui.xf)}" oninput="ui.xf=this.value;locRes()"></div><div id="locres">${locHtml()}</div></div>`}
+function locator(){return `<div class="card"><h3>Bus Locator</h3><p class="sub l">${auth.role==="admin"?"Search buses across all depots.":"Search buses assigned to your depot."}</p><div class="tools"><input id="lq" placeholder="e.g., BM221, KA51AH8184…" value="${esc(ui.xf)}" oninput="ui.xf=this.value;locRes()"></div><div id="locres">${locHtml()}</div></div>`}
 function locHtml(){
   const q=ui.xf.trim().toLowerCase();if(!q)return '<div class="empty">Start typing to search every depot.</div>';
-  const r=S.buses.filter(b=>b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q)).slice(0,30);if(!r.length)return '<div class="empty">No bus found.</div>';
+  const r=S.buses.filter(b=>(auth.role==="admin"||b.loc===auth.depot)&&(b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q))).slice(0,30);if(!r.length)return '<div class="empty">No bus found.</div>';
   return `<div class="tw"><table><thead><tr><th>Bus</th><th>Registration</th><th>Home depot</th><th>Currently at</th><th>Stage</th><th>Route / driver</th></tr></thead><tbody>${r.map(b=>{const s=SN[stage(b)];return `<tr><td><b>${b.id}</b></td><td>${b.reg}</td><td>${esc(dn(b.home))}</td><td>${esc(dn(b.loc))}${b.home!==b.loc?" "+tag("Visiting","b"):""}</td><td>${tag(s[0],s[1])}</td><td>${b.route?esc(b.route)+" / "+esc(b.driver):"—"}</td></tr>`}).join("")}</tbody></table></div>`}
 function locRes(){$("locres").innerHTML=locHtml()}
 function addView(){
@@ -250,7 +253,7 @@ function addView(){
 }
 function loginsView(){
   const d=dep(curD());
-  return `<div class="card"><h2>Logins · ${esc(d.name)}</h2><p class="sub l">Each depot gets four logins: Entry Recorder, Cleaner, Charging Incharge and Scheduler. Every user signs in at the login screen and sees only this depot.</p>
+  return `<div class="card"><h2>Logins · ${esc(d.name)}</h2><p class="sub l">Each depot gets five separate logins: Entry Recorder, Cleaner, Charging Incharge, Scheduler and Depot Manager. The Depot Manager can manage this depot only.</p>
   <div class="tw"><table><thead><tr><th>Role</th><th>User ID</th><th>Password</th><th></th></tr></thead><tbody>${ROLES.map(r=>`<tr><td>${r[1]}</td><td><code>${d.users[r[0]].u}</code></td><td><code>${d.users[r[0]].p}</code></td><td><button class="btn sm s" onclick="regen('${r[0]}')">Regenerate</button></td></tr>`).join("")}</tbody></table></div>
   </div>`;
 }
@@ -263,14 +266,14 @@ function manage(){
   <div><label>Add drivers</label><textarea id="m_d"></textarea><button class="btn sm" onclick="addRes('d')">Add drivers</button>${chips(d.drivers,"d")}</div></div></div>
   <div class="card f"><h3>Transfer a bus to another depot</h3><div class="g2"><div><label>Bus code (currently at ${esc(d.name)})</label><input id="t_id" placeholder="e.g., BM221"></div><div><label>Destination depot</label><select id="t_to">${others.map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join("")}</select></div></div>
   <p class="hint">The bus restarts at the destination Entry Recorder and any route / driver is cleared.</p><button class="btn" onclick="txForm()">Transfer bus</button></div>
-  <div class="card"><h3>Danger zone</h3><button class="btn out" onclick="delDepot()">Delete this depot</button></div>`;
+  ${auth.role==="admin"?'<div class="card"><h3>Danger zone</h3><button class="btn out" onclick="delDepot()">Delete this depot</button></div>':""}`;
 }
 function logView(){return `<div class="card"><h2>Activity Log</h2><p class="sub l">${auth.role==="admin"?"All depots":esc(dn(auth.depot))}</p>${logList(auth.role==="admin"?"":auth.depot,300)}</div>`}
 
 /* ---------- shell ---------- */
 function tabsFor(){
   if(auth.role==="admin")return [["net","Network"],["add","Add Depot"],["ov","Depot Overview"],["manage","Manage"],["logins","Logins"],["log","Activity"]];
-  if(auth.role==="mgr")return [["ov","Depot Overview"],["loc","Bus Locator"],["log","Activity"]];
+  if(auth.role==="mgr")return [["ov","Depot Overview"],["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging"],["sched","Scheduler"],["loc","Bus Locator"],["manage","Manage"],["logins","Logins"],["log","Activity"]];
   return [[auth.role,({entry:"Entry Recorder",clean:"Cleaner",charge:"Charging Incharge",sched:"Scheduler"})[auth.role]]];
 }
 function go(t){ui.tab=t;ui.q="";ui.f=t==="log"?"all":"pending";render()}
@@ -282,7 +285,7 @@ function login(){
   $("app").innerHTML=`<div class="top"><span></span>${thBtn()}</div><div class="card login"><h2 style="text-align:center">Smart Fleet OS Login</h2><p class="sub">Multi-depot console</p>
   <label for="u">User ID</label><input id="u" autocomplete="username" autocapitalize="off"><label for="p">Password</label><input id="p" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
   <div class="err" id="err"></div><button class="btn" style="width:100%;padding:13px" onclick="doLogin()">Login</button>
-  <p class="sub" style="margin-top:14px;font-size:12px">Admin demo: admin / admin123 · Every depot has four role logins (see Logins tab). Demo depots use password demo1234, e.g. chandapura-entry, chandapura-clean, chandapura-charge, chandapura-sched.</p></div>`;
+  <p class="sub" style="margin-top:14px;font-size:12px">Admin demo: admin / admin123 · Demo depot logins use password demo1234, e.g. chandapura-entry, chandapura-clean, chandapura-charge, chandapura-sched and chandapura-mgr.</p></div>`;
 }
 function doLogin(){
   const u=$("u").value.trim().toLowerCase(),p=$("p").value;
@@ -301,7 +304,7 @@ function render(){
   const who=admin?"Admin":(ROLES.find(r=>r[0]===auth.role)[1]+" · "+dn(auth.depot));
   const sel=admin&&depTab&&S.depots.length?`<select class="inl" onchange="ui.depot=this.value;render()" aria-label="Depot">${S.depots.map(d=>`<option value="${d.id}"${d.id===curD()?" selected":""}>${esc(d.name)}</option>`).join("")}</select>`:"";
   $("app").innerHTML=`<div class="top"><span class="pill">${esc(who)}</span><div style="display:flex;gap:8px">${thBtn()}<button class="ghost" onclick="logout()">Logout</button></div></div>
-  <h1>Smart Fleet OS</h1><p class="sub">${admin?"Multi-depot admin console":esc(dn(auth.depot))}</p>
+  <h1>Smart Fleet OS</h1><p class="sub">${admin?"Multi-depot admin console":auth.role==="mgr"?"Depot manager console · limited to this depot":esc(dn(auth.depot))}</p>
   <div class="tabs">${sel}${tabsFor().map(x=>`<button class="tab${t===x[0]?" on":""}" onclick="go('${x[0]}')">${x[1]}</button>`).join("")}</div>${v}
   ${admin?'<div class="tools" style="margin-top:16px"><button class="btn s" onclick="reset()">Reset demo data</button></div>':""}`;
 }
