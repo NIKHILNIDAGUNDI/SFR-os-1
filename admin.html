@@ -207,26 +207,36 @@ function scannerStatus(message){
 }
 function openScanner(){
   $("scannerLayer").innerHTML=`<div class="scan-overlay" role="presentation" onclick="if(event.target===this)closeScanner()"><section class="scan-dialog" role="dialog" aria-modal="true" aria-labelledby="scanTitle">
-  <h2 id="scanTitle">Scan bus number plate</h2><p class="sub l">Position the plate clearly in view, then capture it. OCR runs in your browser; camera frames are not uploaded.</p>
+  <h2 id="scanTitle">Scan bus number plate</h2><p class="sub l">Position the plate clearly in view, then capture it. OCR runs in your browser; camera frames and selected photos stay on this device.</p>
   <video id="scanVideo" autoplay muted playsinline aria-label="Live camera preview"></video>
-  <div class="scan-actions"><button id="capturePlateBtn" class="btn" onclick="scanPlate()" disabled>Capture &amp; scan</button><button class="ghost" onclick="closeScanner()">Cancel</button></div>
+  <div class="scan-actions"><button id="capturePlateBtn" class="btn" onclick="scanPlate()" disabled>Capture &amp; scan</button><button id="retryCameraBtn" class="ghost" onclick="requestScannerCamera()" hidden>Retry camera</button><label class="ghost" for="scanImageInput">Use phone camera or choose photo</label><input id="scanImageInput" type="file" accept="image/*" capture="environment" hidden onchange="scanPlateImage(this.files?.[0])"><button class="ghost" onclick="closeScanner()">Cancel</button></div>
   <div id="scanStatus" class="scan-status" role="status" aria-live="polite">Requesting camera access…</div>
   <label for="scanText">Detected text (edit if needed)</label><textarea id="scanText" class="scan-result" placeholder="Scanned plate text will appear here"></textarea>
   <button class="ghost" style="margin-top:8px" onclick="matchScannedText()">Match plate to bus</button><div id="scanCandidates" class="scan-candidates"></div>
   </section></div>`;
+  requestScannerCamera();
+}
+function requestScannerCamera(){
+  const retryButton=$("retryCameraBtn");
   if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){
-    scannerStatus("Camera access requires a supported browser on HTTPS or localhost.");
+    scannerStatus("Live camera access requires HTTPS or localhost. Use your phone camera/photo above instead.");
     return;
   }
+  if(retryButton)retryButton.disabled=true;
   navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false})
     .then(stream=>{
       if(!$("scanVideo")){stream.getTracks().forEach(track=>track.stop());return}
       scanStream=stream;
       const video=$("scanVideo");video.srcObject=stream;
-      return video.play().then(()=>{if($("capturePlateBtn"))$("capturePlateBtn").disabled=false;scannerStatus("Camera ready. Center the plate and capture it.")});
+      return video.play().then(()=>{
+        if($("capturePlateBtn"))$("capturePlateBtn").disabled=false;
+        if(retryButton)retryButton.hidden=true;
+        scannerStatus("Camera ready. Center the plate and capture it.");
+      });
     })
     .catch(error=>{
-      const reason=error.name==="NotAllowedError"?"Camera permission was denied. Allow camera access and try again.":error.name==="NotFoundError"?"No camera was found on this device.":error.name==="NotReadableError"?"The camera is busy in another app. Close it and try again.":"Could not start the camera: "+error.message;
+      if(retryButton){retryButton.hidden=false;retryButton.disabled=false}
+      const reason=error.name==="NotAllowedError"?"Camera permission was blocked. Close any floating bubbles or overlays and try again, or use your phone camera/photo above.":error.name==="NotFoundError"?"No camera was found on this device. Use your phone camera/photo above instead.":error.name==="NotReadableError"?"The camera is busy in another app. Close it and try again, or use your phone camera/photo above.":"Could not start the camera: "+error.message+" You can use your phone camera/photo above.";
       scannerStatus(reason);
     });
 }
@@ -256,22 +266,31 @@ async function getScanWorker(){
   }});
   return scanWorker;
 }
-async function scanPlate(){
-  const video=$("scanVideo");
-  if(!video||!video.videoWidth)return scannerStatus("Camera is not ready yet.");
-  const button=$("capturePlateBtn");button.disabled=true;
+async function recognizePlate(image,button){
+  if(button)button.disabled=true;
   try{
-    const canvas=document.createElement("canvas");canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-    canvas.getContext("2d").drawImage(video,0,0,canvas.width,canvas.height);
     scannerStatus("Preparing OCR…");
-    const worker=await getScanWorker(),result=await worker.recognize(canvas);
-    $("scanText").value=result.data.text.trim();
-    matchScannedText();
+    const worker=await getScanWorker(),result=await worker.recognize(image);
+    const text=$("scanText");
+    if(text){text.value=result.data.text.trim();matchScannedText()}
   }catch(error){
     scannerStatus("Plate scan failed: "+error.message);
   }finally{
-    if($("capturePlateBtn"))$("capturePlateBtn").disabled=false;
+    if(button&&button.isConnected)button.disabled=false;
   }
+}
+async function scanPlate(){
+  const video=$("scanVideo");
+  if(!video||!video.videoWidth)return scannerStatus("Camera is not ready yet.");
+  const canvas=document.createElement("canvas");canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+  canvas.getContext("2d").drawImage(video,0,0,canvas.width,canvas.height);
+  await recognizePlate(canvas,$("capturePlateBtn"));
+}
+async function scanPlateImage(file){
+  const input=$("scanImageInput");
+  if(!file)return;
+  if(input)input.value="";
+  await recognizePlate(file,input);
 }
 function plateCandidates(){
   return S.buses.filter(bus=>bus.loc===curD()&&
