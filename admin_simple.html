@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Fleet OS – Admin Setup</title>
+  <style>
+    :root {
+      --bg: #f6f4ef; --card: #fff; --ink: #37474f; --mut: #78909c; --line: #3b8ea5; --btn: #e5b59c; --btnh: #d9976f; --slate: #687489; --ok: #3a9068; --warn: #d99a1e; --blue: #2f6fd0; --p1: #e6f0fb; --p2: #e8f5e9; --p4: #fff8dc; --bad: #c0583a;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, system-ui, sans-serif; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 24px; }
+    .card { background: var(--card); border-radius: 14px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,.06); margin-top: 16px; }
+    h1, h2 { margin: 0 0 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    label { display: block; font-weight: 700; margin: 10px 0 6px; }
+    input, textarea { width: 100%; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 8px; background: #f8f8f8; }
+    textarea { min-height: 110px; resize: vertical; }
+    .btn { background: var(--btn); color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
+    .btn.secondary { background: var(--slate); }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+    .helper { color: var(--mut); font-size: 12px; margin-top: 10px; }
+    pre { background: #f2f3f5; padding: 16px; border-radius: 10px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Depot Admin Setup</h1>
+      <p class="helper">Configure the depot profile and route metadata for the Smart Fleet OS console.</p>
+      <div class="grid">
+        <div>
+          <label>Depot name</label>
+          <input id="name" value="Depot 44 (Chandapura)" />
+        </div>
+        <div>
+          <label>City</label>
+          <input id="city" value="Bengaluru" />
+        </div>
+        <div>
+          <label>Latitude</label>
+          <input id="lat" value="12.97" />
+        </div>
+        <div>
+          <label>Longitude</label>
+          <input id="lon" value="77.59" />
+        </div>
+      </div>
+      <label>Routes</label>
+      <textarea id="routes">Mysore Road, Airport Road, ORR, Electronic City, Whitefield</textarea>
+      <label>Drivers</label>
+      <textarea id="drivers">Ramesh Gowda
+Suresh Kumar
+Shivakumar N
+Anand Patil</textarea>
+      <div class="row">
+        <button class="btn" onclick="saveConfig()">Save config</button>
+        <button class="btn secondary" onclick="loadDefaults()">Reset</button>
+      </div>
+      <div class="helper" id="status">No saved config yet.</div>
+      <h2>JSON preview</h2>
+      <pre id="preview"></pre>
+    </div>
+  </div>
+  <script>
+    const KEY = 'sfos_admin_simple_config';
+    function parseLines(value) {
+      return String(value || '').split(/
+|,/).map(x => x.trim()).filter(Boolean);
+    }
+    function buildConfig() {
+      return {
+        name: document.getElementById('name').value.trim() || 'Depot 44 (Chandapura)',
+        city: document.getElementById('city').value.trim() || 'Bengaluru',
+        lat: Number(document.getElementById('lat').value) || 12.97,
+        lon: Number(document.getElementById('lon').value) || 77.59,
+        routes: parseLines(document.getElementById('routes').value),
+        drivers: parseLines(document.getElementById('drivers').value)
+      };
+    }
+    function renderPreview() {
+      document.getElementById('preview').textContent = JSON.stringify(buildConfig(), null, 2);
+    }
+    function saveConfig() {
+      const config = buildConfig();
+      localStorage.setItem(KEY, JSON.stringify(config));
+      document.getElementById('status').textContent = 'Saved to localStorage.';
+      renderPreview();
+    }
+    function loadDefaults() {
+      const defaults = {
+        name: 'Depot 44 (Chandapura)',
+        city: 'Bengaluru',
+        lat: 12.97,
+        lon: 77.59,
+        routes: ['Mysore Road', 'Airport Road', 'ORR', 'Electronic City', 'Whitefield'],
+        drivers: ['Ramesh Gowda', 'Suresh Kumar', 'Shivakumar N', 'Anand Patil']
+      };
+      document.getElementById('name').value = defaults.name;
+      document.getElementById('city').value = defaults.city;
+      document.getElementById('lat').value = defaults.lat;
+      document.getElementById('lon').value = defaults.lon;
+      document.getElementById('routes').value = defaults.routes.join('
+');
+      document.getElementById('drivers').value = defaults.drivers.join('
+');
+      renderPreview();
+      document.getElementById('status').textContent = 'Defaults restored.';
+    }
+    function hydrate() {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) {
+        loadDefaults();
+        return;
+      }
+      try {
+        const data = JSON.parse(raw);
+        document.getElementById('name').value = data.name || 'Depot 44 (Chandapura)';
+        document.getElementById('city').value = data.city || 'Bengaluru';
+        document.getElementById('lat').value = data.lat ?? 12.97;
+        document.getElementById('lon').value = data.lon ?? 77.59;
+        document.getElementById('routes').value = (data.routes || []).join('
+');
+        document.getElementById('drivers').value = (data.drivers || []).join('
+');
+        renderPreview();
+        document.getElementById('status').textContent = 'Loaded saved config from localStorage.';
+      } catch (error) {
+        loadDefaults();
+      }
+    }
+    document.addEventListener('DOMContentLoaded', hydrate);
+    document.addEventListener('input', renderPreview);
+  </script>
+</body>
+</html>
