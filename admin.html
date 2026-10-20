@@ -18,6 +18,8 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-sy
 .nav-item{width:100%;text-align:left;border:0;border-radius:8px;background:transparent;padding:10px 12px;cursor:pointer;font-weight:600;color:var(--mut)}
 .nav-item:hover{background:var(--bg)}
 .nav-item.on{background:var(--line);color:#fff}
+.scanned-bus td{background:color-mix(in srgb,var(--ok) 14%,var(--card))}
+.scanned-bus td:first-child{box-shadow:inset 4px 0 var(--ok)}
 .sidebar-actions{display:grid;gap:8px;margin-top:8px}
 .sidebar-actions button{width:100%}
 .main-content{flex:1;min-width:0}
@@ -48,6 +50,14 @@ th{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em
 .login-submit{transition:background .2s,box-shadow .2s}
 .login-submit.ready{background:var(--line);box-shadow:0 0 0 3px color-mix(in srgb,var(--line) 25%,transparent)}
 .login-submit.ready:hover{background:var(--blue)}
+.scan-overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.68)}
+.scan-dialog{width:min(620px,100%);max-height:90vh;overflow:auto;padding:20px;border-radius:14px;background:var(--card);box-shadow:0 12px 48px rgba(0,0,0,.3)}
+.scan-dialog video{display:block;width:100%;max-height:52vh;aspect-ratio:4/3;object-fit:cover;background:#111;border-radius:10px}
+.scan-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.scan-status{min-height:24px;color:var(--mut);font-size:14px}
+.scan-result{width:100%;min-height:78px;padding:10px 12px;border:1.5px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);resize:vertical}
+.scan-candidates{display:grid;gap:8px;margin-top:10px}
+.scan-candidates button{text-align:left}
 .err{color:var(--bad);min-height:20px;font-size:13px;margin-top:10px}.empty{padding:26px;text-align:center;color:var(--mut)}
 .g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
 .f textarea{min-height:110px;resize:vertical}.hint{font-size:12px;color:var(--mut);font-weight:400}
@@ -58,13 +68,13 @@ code{background:var(--bg);padding:2px 6px;border-radius:6px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--slate);color:#fff;padding:10px 18px;border-radius:10px;opacity:0;transition:.25s;pointer-events:none;z-index:9;max-width:90vw;text-align:center}
 #toast.on{opacity:1}
 </style></head>
-<body><div class="wrap" id="app"></div><div id="toast"></div>
+<body><div class="wrap" id="app"></div><div id="scannerLayer"></div><div id="toast"></div>
 <script>
 const CITIES=[["Bengaluru",12.97,77.59,"KA"],["Chennai",13.08,80.27,"TN"],["Hyderabad",17.38,78.48,"TS"],["Mumbai",19.08,72.88,"MH"],["Pune",18.52,73.86,"MH"],["Delhi",28.61,77.21,"DL"],["Kolkata",22.57,88.36,"WB"],["Kochi",9.93,76.27,"KL"],["Ahmedabad",23.02,72.57,"GJ"],["Jaipur",26.91,75.79,"RJ"],["Other (enter lat / lon)",0,0,"XX"]];
 const ROLES=[["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging Incharge"],["sched","Scheduler"],["mgr","Depot Manager"]];
 const OUTLINE=[[74.5,37],[77,35.5],[79,34],[78.5,31],[81,30],[80,28.5],[84,27.5],[88,27],[88.5,26.5],[92,27],[95,28.5],[97,28],[96,26],[94,24],[93,22],[92.5,23],[91.5,24],[89,22],[87,21],[85,19.5],[82.5,17],[80.2,15.5],[80.3,13],[79.8,10.5],[78,8.5],[77.5,8],[76.5,9],[75,12],[74,15],[73,17.5],[72.8,20],[72.5,21.5],[70,21],[69,22.5],[70.5,23],[68.2,23.7],[70,25],[71,27],[74,31],[74.5,34]];
 const KEY="sfos_multi_v2";
-let S,auth=null,ui={tab:"net",depot:"",q:"",f:"pending",xf:""};
+let S,auth=null,scanStream=null,scanWorker=null,ocrPromise=null,ui={tab:"net",depot:"",q:"",f:"pending",xf:"",selectedBus:""};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cid=s=>String(s).replace(/[^A-Za-z0-9_-]/g,"");
@@ -186,9 +196,107 @@ function rowsFor(tab){
 }
 function toolbar(tab,bulkBtn){
   const e=can(tab);
-  return `<div class="tools"><input id="q" placeholder="Search bus code or registration (e.g., BM221, KA51AH8184)…" value="${esc(ui.q)}" oninput="ui.q=this.value;partial()">
-  <select onchange="ui.f=this.value;render()"><option value="pending"${ui.f==="pending"?" selected":""}>Pending</option><option value="done"${ui.f==="done"?" selected":""}>${tab==="sched"?"Assigned":"Approved"}</option><option value="all"${ui.f==="all"?" selected":""}>All</option></select>
+  return `<div class="tools"><input id="q" placeholder="Search bus code or registration (e.g., BM221, KA51AH8184)…" value="${esc(ui.q)}" oninput="ui.selectedBus='';ui.q=this.value;partial()">
+  <select onchange="ui.selectedBus='';ui.f=this.value;render()"><option value="pending"${ui.f==="pending"?" selected":""}>Pending</option><option value="done"${ui.f==="done"?" selected":""}>${tab==="sched"?"Assigned":"Approved"}</option><option value="all"${ui.f==="all"?" selected":""}>All</option></select>
+  ${["entry","clean","charge"].includes(tab)?'<button class="btn s" onclick="openScanner()">Scan number plate</button>':""}
   ${bulkBtn&&e?`<button class="btn" onclick="bulk('${tab}')">Approve all pending</button>`:""}</div>`;
+}
+function scannerStatus(message){
+  const status=$("scanStatus");
+  if(status)status.textContent=message;
+}
+function openScanner(){
+  $("scannerLayer").innerHTML=`<div class="scan-overlay" role="presentation" onclick="if(event.target===this)closeScanner()"><section class="scan-dialog" role="dialog" aria-modal="true" aria-labelledby="scanTitle">
+  <h2 id="scanTitle">Scan bus number plate</h2><p class="sub l">Position the plate clearly in view, then capture it. OCR runs in your browser; camera frames are not uploaded.</p>
+  <video id="scanVideo" autoplay muted playsinline aria-label="Live camera preview"></video>
+  <div class="scan-actions"><button id="capturePlateBtn" class="btn" onclick="scanPlate()" disabled>Capture &amp; scan</button><button class="ghost" onclick="closeScanner()">Cancel</button></div>
+  <div id="scanStatus" class="scan-status" role="status" aria-live="polite">Requesting camera access…</div>
+  <label for="scanText">Detected text (edit if needed)</label><textarea id="scanText" class="scan-result" placeholder="Scanned plate text will appear here"></textarea>
+  <button class="ghost" style="margin-top:8px" onclick="matchScannedText()">Match plate to bus</button><div id="scanCandidates" class="scan-candidates"></div>
+  </section></div>`;
+  if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){
+    scannerStatus("Camera access requires a supported browser on HTTPS or localhost.");
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false})
+    .then(stream=>{
+      if(!$("scanVideo")){stream.getTracks().forEach(track=>track.stop());return}
+      scanStream=stream;
+      const video=$("scanVideo");video.srcObject=stream;
+      return video.play().then(()=>{if($("capturePlateBtn"))$("capturePlateBtn").disabled=false;scannerStatus("Camera ready. Center the plate and capture it.")});
+    })
+    .catch(error=>{
+      const reason=error.name==="NotAllowedError"?"Camera permission was denied. Allow camera access and try again.":error.name==="NotFoundError"?"No camera was found on this device.":error.name==="NotReadableError"?"The camera is busy in another app. Close it and try again.":"Could not start the camera: "+error.message;
+      scannerStatus(reason);
+    });
+}
+function closeScanner(){
+  if(scanStream){scanStream.getTracks().forEach(track=>track.stop());scanStream=null}
+  const video=$("scanVideo");if(video)video.srcObject=null;
+  $("scannerLayer").innerHTML="";
+}
+function loadOcr(){
+  if(window.Tesseract)return Promise.resolve(window.Tesseract);
+  if(ocrPromise)return ocrPromise;
+  ocrPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement("script");
+    script.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+    script.onload=()=>window.Tesseract?resolve(window.Tesseract):reject(new Error("OCR library loaded without its API."));
+    script.onerror=()=>reject(new Error("Could not download the OCR library. Check your internet connection and try again."));
+    document.head.appendChild(script);
+  }).catch(error=>{ocrPromise=null;throw error});
+  return ocrPromise;
+}
+async function getScanWorker(){
+  if(scanWorker)return scanWorker;
+  const Tesseract=await loadOcr();
+  scanWorker=await Tesseract.createWorker("eng",1,{logger:message=>{
+    if(message.status==="recognizing text")scannerStatus("Reading plate… "+Math.round((message.progress||0)*100)+"%");
+    else if(message.status==="loading language model")scannerStatus("Loading English OCR model…");
+  }});
+  return scanWorker;
+}
+async function scanPlate(){
+  const video=$("scanVideo");
+  if(!video||!video.videoWidth)return scannerStatus("Camera is not ready yet.");
+  const button=$("capturePlateBtn");button.disabled=true;
+  try{
+    const canvas=document.createElement("canvas");canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+    canvas.getContext("2d").drawImage(video,0,0,canvas.width,canvas.height);
+    scannerStatus("Preparing OCR…");
+    const worker=await getScanWorker(),result=await worker.recognize(canvas);
+    $("scanText").value=result.data.text.trim();
+    matchScannedText();
+  }catch(error){
+    scannerStatus("Plate scan failed: "+error.message);
+  }finally{
+    if($("capturePlateBtn"))$("capturePlateBtn").disabled=false;
+  }
+}
+function plateCandidates(){
+  return S.buses.filter(bus=>bus.loc===curD()&&
+    (ui.tab==="entry"||((ui.tab==="clean"||ui.tab==="charge")&&bus.entry)));
+}
+function matchScannedText(){
+  const text=$("scanText").value.toUpperCase().replace(/[^A-Z0-9]/g,"");
+  if(!text)return scannerStatus("No plate text detected. Capture again or enter the registration manually.");
+  const matches=plateCandidates().filter(bus=>text.includes(bus.reg.toUpperCase().replace(/[^A-Z0-9]/g,"")));
+  const list=$("scanCandidates");list.innerHTML="";
+  if(matches.length===1)return selectScannedBus(matches[0].id);
+  if(matches.length>1){
+    scannerStatus("Several buses matched. Choose the correct registration:");
+    list.innerHTML=matches.map(bus=>`<button class="ghost" data-bus-id="${esc(bus.id)}">${esc(bus.reg)} · ${esc(bus.id)}</button>`).join("");
+    list.querySelectorAll("[data-bus-id]").forEach(button=>button.addEventListener("click",()=>selectScannedBus(button.dataset.busId)));
+    return;
+  }
+  scannerStatus("No exact match in this depot’s "+({entry:"entry",clean:"cleaning",charge:"charging"}[ui.tab]||"current")+" queue. Review the detected text and try again.");
+}
+function selectScannedBus(id){
+  const bus=plateCandidates().find(item=>item.id===id);
+  if(!bus)return scannerStatus("That bus is no longer available in this queue. Scan again.");
+  closeScanner();ui.q=bus.reg;ui.f="all";ui.selectedBus=bus.id;render();
+  requestAnimationFrame(()=>document.getElementById("bus-"+bus.id)?.scrollIntoView({behavior:"smooth",block:"center"}));
+  toast("Selected bus "+bus.id+" · "+bus.reg);
 }
 const META={entry:["Depot Intake & Entry Recorder","Every bus arriving at this depot is recorded here. Approving forwards it to the Cleaner and Charging queues."],
  clean:["Cleaning Bay Operations","Buses that passed the Entry Recorder await cleaning approval."],
@@ -199,7 +307,7 @@ function dbView(tab){
   const body=rows.map(b=>{
     const ok=tab==="entry"?b.entry:b[tab],st=SN[stage(b)];
     const other=tab==="entry"?"":`<td>${tab==="clean"?(b.charge?tag("Charging done","ok"):tag("Charging pending","w")):(b.clean?tag("Cleaning done","ok"):tag("Cleaning pending","w"))}</td>`;
-    return `<tr><td><b>${b.id}</b>${homeTag(b)}</td><td>${b.reg}</td><td>${ok?tag("Approved","ok"):tag(tab==="entry"?"Not approved":"Pending","w")}</td>${other}<td>${tag(st[0],st[1])}</td>
+    return `<tr${ui.selectedBus===b.id?' class="scanned-bus" id="bus-'+esc(b.id)+'"':""}><td><b>${b.id}</b>${homeTag(b)}</td><td>${b.reg}</td><td>${ok?tag("Approved","ok"):tag(tab==="entry"?"Not approved":"Pending","w")}</td>${other}<td>${tag(st[0],st[1])}</td>
     ${e?`<td>${ok?`<button class="btn sm out" onclick="act('${b.id}','un${tab}')">Revert</button>`:`<button class="btn sm" onclick="act('${b.id}','${tab}')">Approve</button>`}</td>`:""}</tr>`}).join("");
   return `<div class="card"><h2>${m[0]}</h2><p class="sub l"><b>${esc(d.name)}</b> · ${esc(d.city)}. ${m[1]}${e?"":" (view only)"}</p>${toolbar(tab,true)}
   <div class="tw"><table><thead><tr><th>Bus code</th><th>Registration</th><th>This stage</th>${tab==="entry"?"":"<th>Other stage</th>"}<th>Overall</th>${e?"<th>Action</th>":""}</tr></thead><tbody>${body}</tbody></table>${rows.length?"":'<div class="empty">No buses match this filter.</div>'}</div>
@@ -284,7 +392,7 @@ function tabsFor(){
   if(auth.role==="mgr")return [["ov","Depot Overview"],["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging"],["sched","Scheduler"],["loc","Bus Locator"],["manage","Manage"],["logins","Logins"],["log","Activity"]];
   return [[auth.role,({entry:"Entry Recorder",clean:"Cleaner",charge:"Charging Incharge",sched:"Scheduler"})[auth.role]]];
 }
-function go(t){ui.tab=t;ui.q="";ui.f=t==="log"?"all":"pending";render()}
+function go(t){ui.tab=t;ui.q="";ui.f=t==="log"?"all":"pending";ui.selectedBus="";render()}
 function partial(){const q=$("q"),pos=q.selectionStart;render();const n=$("q");n.focus();n.setSelectionRange(pos,pos)}
 function isDark(){const t=document.documentElement.dataset.theme;return t?t==="dark":matchMedia("(prefers-color-scheme:dark)").matches}
 function theme(){document.documentElement.dataset.theme=isDark()?"light":"dark";render()}

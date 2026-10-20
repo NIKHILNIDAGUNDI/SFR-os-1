@@ -19,6 +19,7 @@ The system implements a complete closed-loop workflow:
 3. **Charging Incharge** - Oversees charging infrastructure and approves charging status
 4. **Scheduler Console** - Assigns buses to routes and drivers (requires BOTH Cleaner AND Charging approvals)
 5. **Return to Depot** - After scheduled duty, buses return to depot for reuse in the workflow
+- **Number plate scanning** - Entry Recorder, Cleaner, and Charging can use a device camera and browser-based OCR to find and highlight a matching bus in the current depot queue. Camera access requires HTTPS or localhost; captured frames are processed in the browser and are not uploaded.
 
 ### 6. Depot Configuration System
 - **Admin Interface** - `admin.html` (advanced) and `admin_simple.html` (simple) for configuring depot-specific settings
