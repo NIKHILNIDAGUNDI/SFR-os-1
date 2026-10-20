@@ -176,6 +176,47 @@ All interfaces save configurations to browser localStorage, which is automatical
 - For production deployment, consider integrating with actual backend APIs for charger hardware, GPS tracking, etc.
 - The newly added `charger.html` provides a foundation for charger infrastructure management that can be expanded with real API integrations
 
+## Cross-Depot Bus Synchronization & Tracking
+
+### Overview
+In multi-depot transit networks, individual physical buses frequently operate across routes spanning multiple depots or are shared among depots (e.g., Bus `KA-25-1234` shared across Chandapura, Tondiarpet, and Miyapur). Without centralized coordination, multiple depots could independently record entry for the same vehicle, resulting in ghost fleet counts, duplicate logs, and operational confusion.
+
+Smart Fleet OS now incorporates native **Cross-Depot Bus Synchronization and Tracking**:
+1. **Central Bus Identity & Linking**:
+   - Each physical vehicle has a globally unique ID and registration number.
+   - When a bus operates across multiple depots, it is associated via `linkedDepots: ['chandapura', 'tondiarpet', 'miyapur']` rather than duplicating vehicle records.
+2. **Automatic List Synchronization**:
+   - When Depot B marks a shared bus as "Entered", the central record is updated (`loc: 'tondiarpet', entry: true, entryDepot: 'tondiarpet'`).
+   - The bus is instantly removed/hidden from the available-for-entry lists (`isAvailableForEntry`) of all other linked depots (Depot A, Depot C, etc.).
+   - At Depot B, the bus appears in the approved intake list and progresses down the cleaning, charging, and scheduling pipeline.
+3. **Confirmed Transfer & Departure Isolation**:
+   - When a bus departs Depot A bound for Depot B, its status updates to `transferStatus: 'in_transit'` and `transferTo: 'depot_b'`.
+   - The bus does NOT automatically become available at all linked depots. It is available for entry **exclusively** at the designated destination depot upon arrival.
+4. **Duplicate & Conflict Prevention**:
+   - The bus registration parser (`parseBusRows`) matches existing vehicles by bus code and registration number. If the exact vehicle already exists, it links the depot without creating duplicate records.
+   - If a registration number is entered with a conflicting bus code (or vice-versa), the operation is rejected with an explanatory error.
+   - If two depots attempt concurrent entry on the same bus, the second attempt is blocked with a clear warning: `Concurrent Entry Blocked: Bus ... is ALREADY entered at ...`.
+5. **Real-Time Cross-Tab & Session Persistence**:
+   - Changes are persisted to central `sfos_multi_v2` storage and propagated across browser tabs and views via `window.addEventListener('storage', ...)`.
+
+### Automated Acceptance Tests
+The test suite in `test_cross_depot_sync.js` verifies all 10 user acceptance criteria:
+1. **Shared Bus List Synchronization**: Entering at one depot removes from all other linked depots.
+2. **Unrelated Fleet Isolation**: Operating on one bus leaves other buses unaffected.
+3. **Multi-Depot Scalability**: Verified for $N \ge 3$ depots simultaneously.
+4. **Duplicate Registration Prevention**: Exact identity matching links vehicles; conflicts are blocked.
+5. **Repeated Action Idempotency**: Re-clicking entry at the current depot notifies without duplicating state.
+6. **Concurrent Entry Enforcement**: Simultaneous entry attempts at different depots fail safely.
+7. **Departure Handling**: Departing a depot does not make a vehicle available everywhere.
+8. **Confirmed Transfer**: In-transit buses are intake-available only at the destination depot.
+9. **Persistence**: Synchronized multi-depot state survives simulated reloads and storage events.
+10. **Workflow Regression**: Full progression through Cleaner, Charging Incharge, and Scheduler ready pool functions seamlessly.
+
+To run the test suite:
+```bash
+node test_cross_depot_sync.js
+```
+
 ---
-*Smart Fleet OS - Depot 44 (Chandapura), Bengaluru*  
+*Smart Fleet OS - Multi-Depot Operations & Cross-Depot Synchronization*  
 *For Ashok Leyland / Switch Mobility / City Transit Operations*

@@ -445,6 +445,12 @@
         window.addEventListener('fleet-db-updated', () => {
             loadPendingBuses();
         });
+
+        window.addEventListener('storage', (e) => {
+            if (e.key === 'smart_fleet_db_entry_recorder' || e.key === 'sfos_multi_v2') {
+                loadPendingBuses();
+            }
+        });
     </script>
 
 </body>

@@ -88,55 +88,210 @@ const stage=b=>!b.entry?"entry":(b.clean&&b.charge)?(b.route?"assigned":"ready")
 const tag=(t,c)=>`<span class="tag t-${c}">${t}</span>`;
 const SN={entry:["At entry","w"],processing:["In clean / charge","w"],ready:["Ready pool","ok"],assigned:["Assigned","b"]};
 
+function isAvailableForEntry(b, depotId){
+  if(!b||!depotId)return false;
+  const linked=b.linkedDepots&&b.linkedDepots.length?b.linkedDepots:[b.home||b.loc].filter(Boolean);
+  if(!linked.includes(depotId))return false;
+  if(b.entry)return false;
+  if(b.maintenance)return false;
+  if(b.transferTo){
+    return b.transferTo===depotId;
+  }
+  return true;
+}
+
 function mkDepot(o,pf){
   let base=(o.name.trim().split(/\s+/)[0]||"depot").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,10)||"depot",id=base,n=2;
   while(S&&S.depots.some(d=>d.id===id))id=base+n++;
   const users={};ROLES.forEach(r=>users[r[0]]={u:id+"-"+r[0],p:pf()});
   return {id,name:o.name.trim(),city:o.city,lat:+o.lat,lon:+o.lon,routes:o.routes,drivers:o.drivers,users};
 }
-function mkBuses(d,pre,start,st,n){const a=[];for(let i=0;i<n;i++)a.push({id:pre+(start+i),reg:st+"51AH"+String((8184+i*37)%10000).padStart(4,"0"),entry:false,clean:false,charge:false,route:"",driver:"",home:d.id,loc:d.id});return a}
-function flow(d,bs,e,c,ch,a){bs.forEach((b,i)=>{if(i<e)b.entry=true;if(i<c)b.clean=true;if(i<ch)b.charge=true;if(i<a){b.route=d.routes[i];b.driver=d.drivers[i]}})}
+function mkBuses(d,pre,start,st,n){
+  const a=[];
+  for(let i=0;i<n;i++)a.push({
+    id:pre+(start+i),
+    reg:st+"51AH"+String((8184+i*37)%10000).padStart(4,"0"),
+    entry:false,clean:false,charge:false,route:"",driver:"",
+    home:d.id,loc:d.id,linkedDepots:[d.id],
+    transferTo:null,transferFrom:null,transferStatus:null,
+    maintenance:false,entryDepot:null,entryAt:null
+  });
+  return a;
+}
+function flow(d,bs,e,c,ch,a){bs.forEach((b,i)=>{if(i<e){b.entry=true;b.entryDepot=d.id;b.entryAt=new Date().toISOString()}if(i<c)b.clean=true;if(i<ch)b.charge=true;if(i<a){b.route=d.routes[i];b.driver=d.drivers[i]}})}
 function seed(){
   S={depots:[],buses:[],log:[]};
   const r=(p,n)=>Array.from({length:n},(_,i)=>p+(101+i)),dr=["Ramesh K","Manjunath S","Imran Pasha","Lokesh B","Venkatesh R","Syed Arif","Prakash N","Gopal M","Naveen Kumar","Basavaraj H"];
   [["Chandapura Depot 44","Bengaluru",12.8,77.7,"BM",221,"KA",122,[34,14,9,3],"SCH-"],["Tondiarpet Depot","Chennai",13.12,80.29,"TN",100,"TN",40,[15,8,6,2],"CHN-"],["Miyapur Depot","Hyderabad",17.5,78.36,"TS",300,"TS",50,[20,10,8,2],"HYD-"]].forEach(x=>{
     const d=mkDepot({name:x[0],city:x[1],lat:x[2],lon:x[3],routes:r(x[9],10),drivers:dr.slice()},()=>"demo1234");
     S.depots.push(d);const bs=mkBuses(d,x[4],x[5],x[6],x[7]);flow(d,bs,...x[8]);S.buses.push(...bs)});
-  logm("Demo network loaded: 3 depots, 212 buses");
+  
+  const allDepotIds=S.depots.map(d=>d.id);
+  // Shared Bus Example 1: KA-25-1234 shared across Chandapura, Tondiarpet, and Miyapur (awaiting entry)
+  S.buses.unshift({
+    id:"KA-25-1234",reg:"KA-25-1234",entry:false,clean:false,charge:false,route:"",driver:"",
+    home:allDepotIds[0],loc:null,linkedDepots:[...allDepotIds],transferTo:null,transferFrom:null,transferStatus:null,
+    maintenance:false,entryDepot:null,entryAt:null
+  });
+  // Shared Bus Example 2: BM221 shared across Chandapura, Tondiarpet, and Miyapur
+  const bm221=S.buses.find(b=>b.id==="BM221");
+  if(bm221){
+    bm221.linkedDepots=["chandapura","tondiarpet","miyapur"];
+    bm221.entry=false;bm221.loc=null;bm221.clean=false;bm221.charge=false;
+  }
+  // Shared Bus Example 3: BM222 shared across Chandapura and Tondiarpet
+  const bm222=S.buses.find(b=>b.id==="BM222");
+  if(bm222)bm222.linkedDepots=["chandapura","tondiarpet"];
+
+  logm("Demo network loaded: 3 depots, "+S.buses.length+" physical buses (including cross-depot shared fleet)");
 }
-function load(){try{const r=localStorage.getItem(KEY);if(r){S=JSON.parse(r);S.depots.forEach(d=>{d.users=d.users||{};ROLES.forEach(x=>{if(!d.users[x[0]])d.users[x[0]]={u:d.id+"-"+x[0],p:rpw()}})});save();return}}catch(e){}seed()}
+function load(){
+  try{
+    const r=localStorage.getItem(KEY);
+    if(r){
+      S=JSON.parse(r);
+      const allDepotIds=S.depots.map(d=>d.id);
+      S.buses.forEach(b=>{
+        if(!b.linkedDepots||!b.linkedDepots.length)b.linkedDepots=[b.home||b.loc].filter(Boolean);
+        if(b.transferTo===undefined)b.transferTo=null;
+        if(b.transferFrom===undefined)b.transferFrom=null;
+        if(b.transferStatus===undefined)b.transferStatus=null;
+        if(b.maintenance===undefined)b.maintenance=false;
+      });
+      if(!S.buses.some(b=>b.id==="KA-25-1234")){
+        S.buses.unshift({
+          id:"KA-25-1234",reg:"KA-25-1234",entry:false,clean:false,charge:false,route:"",driver:"",
+          home:allDepotIds[0]||"chandapura",loc:null,linkedDepots:[...allDepotIds],transferTo:null,transferFrom:null,transferStatus:null,
+          maintenance:false,entryDepot:null,entryAt:null
+        });
+      }
+      const bm221=S.buses.find(b=>b.id==="BM221");
+      if(bm221&&(!bm221.linkedDepots||bm221.linkedDepots.length<=1)){
+        bm221.linkedDepots=["chandapura","tondiarpet","miyapur"];
+        bm221.entry=false;bm221.loc=null;bm221.clean=false;bm221.charge=false;
+      }
+      S.depots.forEach(d=>{d.users=d.users||{};ROLES.forEach(x=>{if(!d.users[x[0]])d.users[x[0]]={u:d.id+"-"+x[0],p:rpw()}})});
+      save();return;
+    }
+  }catch(e){}
+  seed();
+}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function logm(m,...ds){S.log.unshift({t:new Date().toLocaleString(),m,d:ds});S.log=S.log.slice(0,300)}
-function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove("on"),2400)}
-function stats(d){const c={n:0,entry:0,processing:0,ready:0,assigned:0,clean:0,charge:0};bd(d).forEach(b=>{c.n++;c[stage(b)]++;if(b.entry){if(!b.clean)c.clean++;if(!b.charge)c.charge++}});return c}
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove("on"),2800)}
+function stats(d){
+  const c={n:0,entry:0,processing:0,ready:0,assigned:0,clean:0,charge:0};
+  const present=S.buses.filter(b=>b.loc===d&&b.entry);
+  const awaiting=S.buses.filter(b=>isAvailableForEntry(b,d));
+  c.entry=awaiting.length;
+  c.n=present.length+awaiting.length;
+  present.forEach(b=>{
+    c[stage(b)]++;
+    if(!b.clean)c.clean++;
+    if(!b.charge)c.charge++;
+  });
+  return c;
+}
 const curD=()=>auth.role==="admin"?(dep(ui.depot)?ui.depot:(S.depots[0]||{}).id):auth.depot;
 const can=t=>auth.role==="admin"||auth.role==="mgr"||auth.role===t;
 
 /* ---------- actions ---------- */
 function act(id,type){
-  const b=S.buses.find(x=>x.id===id);if(!b)return;const d=b.loc;
-  if(auth.role!=="admin"&&b.loc!==auth.depot)return toast("You can only manage buses in your depot");
-  const M={entry:()=>{b.entry=true;return id+" approved at Entry Recorder, forwarded to Cleaner + Charging"},
-   unentry:()=>{b.entry=b.clean=b.charge=false;b.route=b.driver="";return id+" entry reverted"},
-   clean:()=>{b.clean=true;return id+" cleaning approved"},unclean:()=>{b.clean=false;b.route=b.driver="";return id+" cleaning reverted"},
-   charge:()=>{b.charge=true;return id+" charging approved"},uncharge:()=>{b.charge=false;b.route=b.driver="";return id+" charging reverted"},
-   assign:()=>{const r=$("r_"+id).value,dv=$("d_"+id).value;if(!r||!dv){toast("Choose route and driver");return null}b.route=r;b.driver=dv;return id+" assigned to "+r+" with "+dv},
-   unassign:()=>{const m=id+" unassigned from "+b.route;b.route=b.driver="";return m}};
+  load();
+  const b=S.buses.find(x=>x.id===id);if(!b)return toast("Bus "+id+" not found");
+  const d=curD();
+  
+  if(auth.role!=="admin"){
+    if(type==="entry"){
+      const linked=b.linkedDepots&&b.linkedDepots.length?b.linkedDepots:[b.home||b.loc].filter(Boolean);
+      if(!linked.includes(d))return toast("Bus "+b.id+" is not authorized for entry at "+dn(d));
+    }else{
+      if(b.loc!==d)return toast("You can only manage buses physically located at your depot");
+    }
+  }
+
+  if(type==="entry"){
+    if(b.entry){
+      if(b.loc===d) return toast("Bus "+id+" is already marked as entered at this depot.");
+      return toast("Concurrent Entry Blocked: Bus "+b.id+" ("+b.reg+") is ALREADY entered at "+dn(b.loc)+"!");
+    }
+    if(b.transferTo&&b.transferTo!==d){
+      return toast("Entry Blocked: Bus "+b.id+" is currently in transit to "+dn(b.transferTo)+"!");
+    }
+    if(b.maintenance){
+      return toast("Entry Blocked: Bus "+b.id+" is currently under maintenance!");
+    }
+    b.entry=true;
+    b.loc=d;
+    b.entryDepot=d;
+    b.entryAt=new Date().toISOString();
+    b.transferTo=null;
+    b.transferFrom=null;
+    b.transferStatus=null;
+    const msg=id+" ("+b.reg+") recorded & entered at "+dn(d)+", forwarded to Cleaner + Charging";
+    logm(msg,d);save();render();toast(msg);return;
+  }
+
+  if(type==="unentry"){
+    b.entry=b.clean=b.charge=false;
+    b.route=b.driver="";
+    const linked=b.linkedDepots||[b.home||b.loc].filter(Boolean);
+    if(linked.length>1)b.loc=null;
+    b.entryDepot=null;b.entryAt=null;
+    const msg=id+" entry reverted at "+dn(d);
+    logm(msg,d);save();render();toast(msg);return;
+  }
+
+  const M={
+    clean:()=>{b.clean=true;return id+" cleaning approved"},
+    unclean:()=>{b.clean=false;b.route=b.driver="";return id+" cleaning reverted"},
+    charge:()=>{b.charge=true;return id+" charging approved"},
+    uncharge:()=>{b.charge=false;b.route=b.driver="";return id+" charging reverted"},
+    assign:()=>{const r=$("r_"+id).value,dv=$("d_"+id).value;if(!r||!dv){toast("Choose route and driver");return null}b.route=r;b.driver=dv;return id+" assigned to "+r+" with "+dv},
+    unassign:()=>{const m=id+" unassigned from "+b.route;b.route=b.driver="";return m}
+  };
   const m=M[type]();if(!m)return;logm(m,d);
   if((type==="clean"||type==="charge")&&stage(b)==="ready")logm(id+" moved to Scheduler ready pool",d);
   save();render();
 }
 function bulk(kind){
+  load();
+  const d=curD();
   const rows=rowsFor(kind).filter(b=>kind==="entry"?!b.entry:!b[kind]);
   if(!rows.length)return toast("Nothing pending");
-  rows.forEach(b=>b[kind]=true);logm("Bulk approved "+rows.length+" buses at "+ROLES.find(r=>r[0]===kind)[1],curD());save();render();toast(rows.length+" approved");
+  if(kind==="entry"){
+    let count=0;
+    rows.forEach(b=>{
+      if(!b.entry&&(!b.transferTo||b.transferTo===d)&&!b.maintenance){
+        b.entry=true;b.loc=d;b.entryDepot=d;b.entryAt=new Date().toISOString();
+        b.transferTo=null;b.transferFrom=null;b.transferStatus=null;
+        count++;
+      }
+    });
+    logm("Bulk approved "+count+" buses at Entry Recorder ("+dn(d)+")",d);
+    save();render();toast(count+" buses approved for entry");return;
+  }
+  rows.forEach(b=>b[kind]=true);
+  logm("Bulk approved "+rows.length+" buses at "+ROLES.find(r=>r[0]===kind)[1],d);
+  save();render();toast(rows.length+" approved");
 }
 function tx(id,to){
+  load();
   const b=S.buses.find(x=>x.id===id);if(!b||!to||!dep(to))return toast("Choose a destination depot");
   if(auth.role!=="admin"&&b.loc!==auth.depot)return toast("You can only transfer buses from your depot");
   const from=b.loc;if(from===to)return toast("Bus is already at that depot");
-  b.loc=to;b.entry=b.clean=b.charge=false;b.route=b.driver="";
-  logm(id+" transferred "+dn(from)+" → "+dn(to)+" (awaits Entry Recorder at "+dn(to)+")",from,to);save();render();toast(id+" sent to "+dn(to));
+  
+  b.loc=null; // Departs current depot
+  b.entry=b.clean=b.charge=false;
+  b.route=b.driver="";
+  b.transferFrom=from;
+  b.transferTo=to;
+  b.transferStatus="in_transit";
+  if(!b.linkedDepots)b.linkedDepots=[from];
+  if(!b.linkedDepots.includes(to))b.linkedDepots.push(to);
+
+  logm(id+" departed "+dn(from)+" in transit → "+dn(to)+" (awaits confirmed Entry at "+dn(to)+")",from,to);
+  save();render();toast(id+" dispatched in transit to "+dn(to));
 }
 function txRow(id){tx(id,$("x_"+id).value)}
 function txForm(){const id=cid($("t_id").value),b=S.buses.find(x=>x.id.toLowerCase()===id.toLowerCase());if(!b)return toast("Bus code not found");tx(b.id,$("t_to").value)}
@@ -144,53 +299,114 @@ function addDepot(){
   if(auth.role!=="admin")return toast("Only the admin can create depots");
   const name=$("f_name").value.trim();if(!name)return toast("Enter a depot name");
   const n=Number($("f_count").value);if(!Number.isInteger(n)||n<1||n>500)return toast("Enter the number of buses (1–500)");
-  const parsed=parseBusRows($("f_buses").value,n);if(parsed.error)return toast(parsed.error);
   const city=$("f_city").value.trim()||name,lat=0,lon=0;
   const d=mkDepot({name,city,lat,lon,routes:lines($("f_sched").value),drivers:lines($("f_drv").value)},rpw);
-  const bs=parsed.buses.map(b=>({...b,entry:false,clean:false,charge:false,route:"",driver:"",home:d.id,loc:d.id}));
-  S.depots.push(d);S.buses.push(...bs);logm("New depot added: "+d.name+" ("+d.city+") with "+bs.length+" buses, "+d.routes.length+" schedules, "+d.drivers.length+" drivers",d.id);
+  const parsed=parseBusRows($("f_buses").value,n,d.id);if(parsed.error)return toast(parsed.error);
+  
+  S.depots.push(d);
+  if(parsed.busesToAdd&&parsed.busesToAdd.length)S.buses.push(...parsed.busesToAdd);
+  if(parsed.busesToLink&&parsed.busesToLink.length){
+    parsed.busesToLink.forEach(item=>{
+      if(!item.bus.linkedDepots)item.bus.linkedDepots=[item.bus.home||item.bus.loc].filter(Boolean);
+      if(!item.bus.linkedDepots.includes(d.id))item.bus.linkedDepots.push(d.id);
+    });
+  }
+  logm("New depot added: "+d.name+" ("+d.city+") with "+n+" buses ("+parsed.busesToAdd.length+" new, "+parsed.busesToLink.length+" shared), "+d.routes.length+" schedules, "+d.drivers.length+" drivers",d.id);
   save();ui={tab:"logins",depot:d.id,q:"",f:"pending"};render();toast("Depot added – 5 role logins generated");
 }
-function parseBusRows(text,expected){
+function parseBusRows(text,expected,targetDepotId){
   const rows=busLines(text);
   if(rows.length!==expected)return {error:"Enter exactly "+expected+" bus lines; "+rows.length+" pasted."};
-  const ids=new Set(S.buses.map(b=>b.id.toLowerCase())),regs=new Set(S.buses.map(b=>b.reg.toLowerCase())),buses=[];
+  const targetId=targetDepotId||curD();
+  const busesToAdd=[],busesToLink=[],seenInBatch=new Set();
   for(let i=0;i<rows.length;i++){
     const parts=rows[i].split(",");
     if(parts.length!==2)return {error:"Bus line "+(i+1)+" must be BUS CODE, REGISTRATION."};
     const code=parts[0].trim(),reg=parts[1].trim(),safeCode=cid(code),safeReg=esc(reg);
     if(!code||safeCode!==code||!reg)return {error:"Bus line "+(i+1)+" needs a valid bus code and registration."};
-    if(ids.has(code.toLowerCase()))return {error:"Bus code "+code+" is duplicated or already exists."};
-    if(regs.has(safeReg.toLowerCase()))return {error:"Registration "+reg+" is duplicated or already exists."};
-    ids.add(code.toLowerCase());regs.add(safeReg.toLowerCase());buses.push({id:code,reg:safeReg});
+    const codeLower=code.toLowerCase(),regLower=reg.toLowerCase();
+    
+    if(seenInBatch.has(codeLower)||seenInBatch.has(regLower)){
+      return {error:"Duplicate vehicle entry in current batch: "+code+" ("+reg+")"};
+    }
+    seenInBatch.add(codeLower);seenInBatch.add(regLower);
+    
+    const existingByCode=S.buses.find(b=>b.id.toLowerCase()===codeLower);
+    const existingByReg=S.buses.find(b=>b.reg.toLowerCase()===regLower);
+    
+    // Exact match: reuse existing physical vehicle identity across depots!
+    if(existingByCode&&existingByReg&&existingByCode.id===existingByReg.id){
+      const linked=existingByCode.linkedDepots||[existingByCode.home||existingByCode.loc].filter(Boolean);
+      if(linked.includes(targetId)){
+        return {error:"Duplicate Registration Prevented: Bus "+code+" ("+reg+") is already registered and linked to "+dn(targetId)+"."};
+      }
+      busesToLink.push({bus:existingByCode,depotId:targetId});
+      continue;
+    }
+    
+    // Conflict detection:
+    if(existingByCode&&(!existingByReg||existingByCode.id!==existingByReg.id)){
+      return {error:"Identity Conflict: Bus code "+code+" is already registered with registration "+existingByCode.reg+". Cannot assign to "+reg+"."};
+    }
+    if(existingByReg&&(!existingByCode||existingByCode.id!==existingByReg.id)){
+      return {error:"Duplicate Registration Prevented: Registration "+reg+" is already registered under bus code "+existingByReg.id+"."};
+    }
+    
+    // New physical bus
+    busesToAdd.push({
+      id:code,reg:safeReg,entry:false,clean:false,charge:false,route:"",driver:"",
+      home:targetId,loc:targetId,linkedDepots:[targetId],transferTo:null,transferFrom:null,transferStatus:null,
+      maintenance:false,entryDepot:null,entryAt:null
+    });
   }
-  return {buses};
+  return {busesToAdd,busesToLink};
 }
 function addRes(kind){
   const d=dep(curD());
-  if(kind==="b"){const count=Number($("m_count").value);if(!Number.isInteger(count)||count<1||count>500)return toast("Enter the number of buses (1–500)");
-    const parsed=parseBusRows($("m_b").value,count);if(parsed.error)return toast(parsed.error);
-    S.buses.push(...parsed.buses.map(b=>({...b,entry:false,clean:false,charge:false,route:"",driver:"",home:d.id,loc:d.id})));
-    logm(count+" buses added to "+d.name,d.id);toast(count+" buses added")}
+  if(kind==="b"){
+    const count=Number($("m_count").value);if(!Number.isInteger(count)||count<1||count>500)return toast("Enter the number of buses (1–500)");
+    const parsed=parseBusRows($("m_b").value,count,d.id);if(parsed.error)return toast(parsed.error);
+    let added=0,linked=0;
+    if(parsed.busesToAdd&&parsed.busesToAdd.length){S.buses.push(...parsed.busesToAdd);added=parsed.busesToAdd.length}
+    if(parsed.busesToLink&&parsed.busesToLink.length){
+      parsed.busesToLink.forEach(item=>{
+        if(!item.bus.linkedDepots)item.bus.linkedDepots=[item.bus.home||item.bus.loc].filter(Boolean);
+        if(!item.bus.linkedDepots.includes(d.id))item.bus.linkedDepots.push(d.id);
+      });
+      linked=parsed.busesToLink.length;
+    }
+    const msg=(added?added+" new bus(es) added. ":"")+(linked?linked+" existing shared bus(es) authorized for "+d.name+".":"");
+    logm(msg,d.id);toast(msg);
+  }
   if(kind==="s"){const a=lines($("m_s").value).filter(x=>!d.routes.includes(x));d.routes.push(...a);logm(a.length+" schedules added to "+d.name,d.id);toast(a.length+" added")}
   if(kind==="d"){const a=lines($("m_d").value).filter(x=>!d.drivers.includes(x));d.drivers.push(...a);logm(a.length+" drivers added to "+d.name,d.id);toast(a.length+" added")}
   save();render();
 }
 function remRes(kind,i){
-  const d=dep(curD()),list=kind==="s"?d.routes:d.drivers,v=list[i],inUse=bd(d.id).some(b=>(kind==="s"?b.route:b.driver)===v);
+  const d=dep(curD()),list=kind==="s"?d.routes:d.drivers,v=list[i],inUse=S.buses.filter(b=>b.loc===d.id).some(b=>(kind==="s"?b.route:b.driver)===v);
   if(inUse)return toast("In use by an assigned bus – unassign it first");list.splice(i,1);logm((kind==="s"?"Schedule ":"Driver ")+v+" removed from "+d.name,d.id);save();render();
 }
 function regen(role){const d=dep(curD());if(!d||!d.users[role])return toast("Login not found");d.users[role].p=rpw();logm("Password regenerated for "+d.users[role].u,d.id);save();render();toast("New password generated")}
-function delDepot(){if(auth.role!=="admin")return toast("Only the admin can delete depots");const d=dep(curD());if(!confirm("Delete "+d.name+" and every bus currently located there?"))return;
-  S.buses=S.buses.filter(b=>b.loc!==d.id);S.depots=S.depots.filter(x=>x.id!==d.id);logm("Depot deleted: "+d.name);save();ui.tab="net";ui.depot="";render()}
+function delDepot(){if(auth.role!=="admin")return toast("Only the admin can delete depots");const d=dep(curD());if(!confirm("Delete "+d.name+" and remove depot association?"))return;
+  S.buses.forEach(b=>{
+    if(b.linkedDepots)b.linkedDepots=b.linkedDepots.filter(x=>x!==d.id);
+    if(b.loc===d.id){b.loc=null;b.entry=false;b.route=b.driver="";}
+  });
+  S.depots=S.depots.filter(x=>x.id!==d.id);logm("Depot deleted: "+d.name);save();ui.tab="net";ui.depot="";render()}
 /* ---------- views ---------- */
 function rowsFor(tab){
   const d=curD(),q=ui.q.trim().toLowerCase();
-  let r=bd(d).filter(b=>!q||b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q));
+  let r;
+  if(tab==="entry"){
+    r=S.buses.filter(b=>(b.loc===d&&b.entry)||isAvailableForEntry(b,d));
+  }else{
+    r=S.buses.filter(b=>b.loc===d&&b.entry);
+  }
+  if(q)r=r.filter(b=>b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q));
   const f=(ok)=>x=>ui.f==="all"||(ui.f==="pending"?!ok(x):ok(x));
   if(tab==="entry")r=r.filter(f(b=>b.entry));
-  if(tab==="clean")r=r.filter(b=>b.entry).filter(f(b=>b.clean));
-  if(tab==="charge")r=r.filter(b=>b.entry).filter(f(b=>b.charge));
+  if(tab==="clean")r=r.filter(f(b=>b.clean));
+  if(tab==="charge")r=r.filter(f(b=>b.charge));
   if(tab==="sched")r=r.filter(b=>["ready","assigned"].includes(stage(b))).filter(f(b=>!!b.route));
   return r;
 }
@@ -293,8 +509,9 @@ async function scanPlateImage(file){
   await recognizePlate(file,input);
 }
 function plateCandidates(){
-  return S.buses.filter(bus=>bus.loc===curD()&&
-    (ui.tab==="entry"||((ui.tab==="clean"||ui.tab==="charge")&&bus.entry)));
+  const d=curD();
+  if(ui.tab==="entry")return S.buses.filter(bus=>(bus.loc===d&&bus.entry)||isAvailableForEntry(bus,d));
+  return S.buses.filter(bus=>bus.loc===d&&bus.entry);
 }
 function matchScannedText(){
   const text=$("scanText").value.toUpperCase().replace(/[^A-Z0-9]/g,"");
@@ -320,7 +537,14 @@ function selectScannedBus(id){
 const META={entry:["Depot Intake & Entry Recorder","Every bus arriving at this depot is recorded here. Approving forwards it to the Cleaner and Charging queues."],
  clean:["Cleaning Bay Operations","Buses that passed the Entry Recorder await cleaning approval."],
  charge:["Charging Infrastructure Operations","Buses that passed the Entry Recorder await charging approval. When BOTH Cleaner and Charging approve, the bus moves to the Scheduler."]};
-function homeTag(b){return b.home!==b.loc?" "+tag("From "+esc(dn(b.home)),"b"):""}
+function homeTag(b){
+  let t="";
+  const linked=b.linkedDepots||[b.home||b.loc].filter(Boolean);
+  if(linked.length>1)t+=" "+tag("Shared ("+linked.length+" depots)","b");
+  else if(b.home&&b.loc&&b.home!==b.loc)t+=" "+tag("From "+esc(dn(b.home)),"b");
+  if(b.transferTo&&b.transferStatus==="in_transit")t+=" "+tag("In Transit → "+esc(dn(b.transferTo)),"w");
+  return t;
+}
 function dbView(tab){
   const d=dep(curD()),rows=rowsFor(tab),m=META[tab],e=can(tab);
   const body=rows.map(b=>{
@@ -352,8 +576,15 @@ function depOv(){
   <div class="card"><h3>Buses at this depot</h3><div class="tools"><input id="q" placeholder="Search bus code or registration…" value="${esc(ui.q)}" oninput="ui.q=this.value;partial()"></div>${busTable(d.id)}</div>
   <div class="card"><h3>Recent activity</h3>${logList(d.id,8)}</div>`;
 }
-function busTable(d){const q=ui.q.trim().toLowerCase(),r=bd(d).filter(b=>!q||b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q));
- return `<div class="tw"><table><thead><tr><th>Bus code</th><th>Registration</th><th>Stage</th><th>Route / driver</th></tr></thead><tbody>${r.map(b=>{const s=SN[stage(b)];return `<tr><td><b>${b.id}</b>${homeTag(b)}</td><td>${b.reg}</td><td>${tag(s[0],s[1])}</td><td>${b.route?esc(b.route)+" / "+esc(b.driver):"—"}</td></tr>`}).join("")}</tbody></table></div>${r.length?"":'<div class="empty">No buses match.</div>'}<p class="sub l" style="margin-top:10px">${r.length} bus(es)</p>`}
+function busTable(d){
+  const q=ui.q.trim().toLowerCase();
+  const r=S.buses.filter(b=>(b.loc===d&&b.entry)||isAvailableForEntry(b,d)).filter(b=>!q||b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q));
+  return `<div class="tw"><table><thead><tr><th>Bus code</th><th>Registration</th><th>Status / Location</th><th>Stage</th><th>Route / driver</th></tr></thead><tbody>${r.map(b=>{
+    const s=SN[stage(b)];
+    const locStatus=b.entry?tag("Present at "+esc(dn(b.loc)),"ok"):(b.transferTo===d?tag("Awaiting Arrival","w"):tag("Available for Entry","b"));
+    return `<tr><td><b>${b.id}</b>${homeTag(b)}</td><td>${b.reg}</td><td>${locStatus}</td><td>${tag(s[0],s[1])}</td><td>${b.route?esc(b.route)+" / "+esc(b.driver):"—"}</td></tr>`
+  }).join("")}</tbody></table></div>${r.length?"":'<div class="empty">No buses match.</div>'}<p class="sub l" style="margin-top:10px">${r.length} bus(es)</p>`;
+}
 function logList(d,n){const l=S.log.filter(x=>!d||x.d.includes(d)).slice(0,n);return `<ul class="log">${l.map(x=>`<li>${x.t} — ${esc(x.m)}</li>`).join("")||"<li>No activity yet.</li>"}</ul>`}
 function mapSvg(){
   const P=(lon,lat)=>[((lon-67)*12.5).toFixed(1),((38-lat)*12.5).toFixed(1)];
@@ -365,24 +596,33 @@ function mapSvg(){
 function openDepot(id){ui.depot=id;go(auth.role==="admin"?"ov":"ov")}
 function net(){
   const T=S.depots.reduce((a,d)=>{const c=stats(d.id);a.n+=c.n;a.r+=c.ready;a.a+=c.assigned;return a},{n:0,r:0,a:0});
+  const totalFleet=S.buses.length;
+  const presentBuses=S.buses.filter(b=>b.entry).length;
+  const inTransitBuses=S.buses.filter(b=>b.transferStatus==="in_transit").length;
   const rows=S.depots.map(d=>{const c=stats(d.id);return `<tr><td><b>${esc(d.name)}</b></td><td>${esc(d.city)}</td><td>${c.n}</td><td>${c.entry}</td><td>${c.processing}</td><td>${c.ready}</td><td>${c.assigned}</td><td><button class="btn sm" onclick="openDepot('${d.id}')">Open</button></td></tr>`}).join("");
-  return `<div class="card"><h2>Network Overview</h2><p class="sub l">All depots and their buses at each stage. Click Open to inspect a depot.</p>
-  <div class="kpis"><div class="kpi"><b>${S.depots.length}</b><span>Depots</span></div><div class="kpi"><b>${T.n}</b><span>Total buses</span></div><div class="kpi"><b>${T.r}</b><span>Ready for schedule</span></div><div class="kpi"><b>${T.a}</b><span>Assigned to routes</span></div></div></div>
-  <div class="card"><div class="tw"><table style="min-width:520px"><thead><tr><th>Depot</th><th>City</th><th>Buses</th><th>Entry</th><th>Clean/Chg</th><th>Ready</th><th>Assigned</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+  return `<div class="card"><h2>Network Overview</h2><p class="sub l">All depots and centralized fleet tracking. Click Open to inspect a depot.</p>
+  <div class="kpis"><div class="kpi"><b>${S.depots.length}</b><span>Depots</span></div><div class="kpi"><b>${totalFleet}</b><span>Unique Fleet Buses</span></div><div class="kpi"><b>${presentBuses}</b><span>Buses Present in Depots</span></div><div class="kpi"><b>${inTransitBuses}</b><span>In Transit</span></div></div></div>
+  <div class="card"><div class="tw"><table style="min-width:520px"><thead><tr><th>Depot</th><th>City</th><th>Present</th><th>Entry Pending</th><th>Clean/Chg</th><th>Ready</th><th>Assigned</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
   ${locator()}`;
 }
-function locator(){return `<div class="card"><h3>Bus Locator</h3><p class="sub l">${auth.role==="admin"?"Search buses across all depots.":"Search buses assigned to your depot."}</p><div class="tools"><input id="lq" placeholder="e.g., BM221, KA51AH8184…" value="${esc(ui.xf)}" oninput="ui.xf=this.value;locRes()"></div><div id="locres">${locHtml()}</div></div>`}
+function locator(){return `<div class="card"><h3>Bus Locator</h3><p class="sub l">${auth.role==="admin"?"Search buses across all depots.":"Search buses assigned or authorized for your depot."}</p><div class="tools"><input id="lq" placeholder="e.g., BM221, KA51AH8184, KA-25-1234…" value="${esc(ui.xf)}" oninput="ui.xf=this.value;locRes()"></div><div id="locres">${locHtml()}</div></div>`}
 function locHtml(){
   const q=ui.xf.trim().toLowerCase();if(!q)return '<div class="empty">Start typing to search every depot.</div>';
-  const r=S.buses.filter(b=>(auth.role==="admin"||b.loc===auth.depot)&&(b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q))).slice(0,30);if(!r.length)return '<div class="empty">No bus found.</div>';
-  return `<div class="tw"><table><thead><tr><th>Bus</th><th>Registration</th><th>Home depot</th><th>Currently at</th><th>Stage</th><th>Route / driver</th></tr></thead><tbody>${r.map(b=>{const s=SN[stage(b)];return `<tr><td><b>${b.id}</b></td><td>${b.reg}</td><td>${esc(dn(b.home))}</td><td>${esc(dn(b.loc))}${b.home!==b.loc?" "+tag("Visiting","b"):""}</td><td>${tag(s[0],s[1])}</td><td>${b.route?esc(b.route)+" / "+esc(b.driver):"—"}</td></tr>`}).join("")}</tbody></table></div>`}
+  const r=S.buses.filter(b=>(auth.role==="admin"||(b.linkedDepots||[]).includes(auth.depot)||b.loc===auth.depot)&&(b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q))).slice(0,30);if(!r.length)return '<div class="empty">No bus found.</div>';
+  return `<div class="tw"><table><thead><tr><th>Bus code</th><th>Registration</th><th>Authorized Depots</th><th>Current Status / Location</th><th>Stage</th><th>Route / driver</th></tr></thead><tbody>${r.map(b=>{
+    const s=SN[stage(b)];
+    const linked=(b.linkedDepots||[b.home||b.loc].filter(Boolean)).map(x=>dn(x)).join(", ");
+    let locInfo=b.entry?`Present at ${esc(dn(b.loc))}`:(b.transferTo?`In Transit (${esc(dn(b.transferFrom))} → ${esc(dn(b.transferTo))})`:`Available for Entry across (${linked})`);
+    return `<tr><td><b>${b.id}</b>${homeTag(b)}</td><td>${b.reg}</td><td>${esc(linked)}</td><td>${esc(locInfo)}</td><td>${tag(s[0],s[1])}</td><td>${b.route?esc(b.route)+" / "+esc(b.driver):"—"}</td></tr>`
+  }).join("")}</tbody></table></div>`;
+}
 function locRes(){$("locres").innerHTML=locHtml()}
 function addView(){
   return `<div class="card f"><h2>Add a New Depot</h2><p class="sub l">Enter the depot details by hand. Buses, schedule codes and drivers entered here show up immediately, and logins for the depot are generated automatically.</p>
   <div class="g2"><div><label>Depot name</label><input id="f_name" placeholder="e.g., Yeshwanthpur Depot"></div>
   <div><label>City / location</label><input id="f_city" placeholder="e.g., Bengaluru"></div></div>
   <div class="g2"><div><label>Number of buses <span class="hint">(required)</span></label><input id="f_count" type="number" min="1" max="500" step="1" placeholder="e.g., 40" oninput="cnt()"></div></div>
-  <label>Paste exact buses <span class="hint">(required) – one per line: BUS CODE, REGISTRATION. The number of lines must match the number of buses above.</span></label><textarea id="f_buses" oninput="cnt()" placeholder="BM221, KA51AH8184&#10;BM222, KA51AH8221"></textarea><p class="hint" id="f_cnt">0 of 0 buses entered</p>
+  <label>Paste exact buses <span class="hint">(required) – one per line: BUS CODE, REGISTRATION. Existing physical buses with matching code &amp; registration will be safely linked to this depot without creating duplicates.</span></label><textarea id="f_buses" oninput="cnt()" placeholder="BM221, KA51AH8184&#10;BM222, KA51AH8221"></textarea><p class="hint" id="f_cnt">0 of 0 buses entered</p>
   <div class="g2"><div><label>Schedule codes <span class="hint">– one per line</span></label><textarea id="f_sched" placeholder="SCH-101 Majestic&#10;SCH-102 Silk Board"></textarea></div><div><label>Driver names <span class="hint">– one per line</span></label><textarea id="f_drv" placeholder="Ramesh K&#10;Imran Pasha"></textarea></div></div>
   <div class="tools"><button class="btn" onclick="addDepot()">Add depot &amp; generate logins</button></div></div>`;
 }
@@ -392,15 +632,75 @@ function loginsView(){
   <div class="tw"><table><thead><tr><th>Role</th><th>User ID</th><th>Password</th><th></th></tr></thead><tbody>${ROLES.map(r=>`<tr><td>${r[1]}</td><td><code>${d.users[r[0]].u}</code></td><td><code>${d.users[r[0]].p}</code></td><td><button class="btn sm s" onclick="regen('${r[0]}')">Regenerate</button></td></tr>`).join("")}</tbody></table></div>
   </div>`;
 }
+function linkBusAction(){
+  load();
+  const d=dep(curD());
+  const busId=$("link_bus_select")?.value;
+  if(!busId)return toast("Select a bus to link");
+  const b=S.buses.find(x=>x.id===busId);
+  if(!b)return toast("Bus not found");
+  if(!b.linkedDepots)b.linkedDepots=[b.home||b.loc].filter(Boolean);
+  if(b.linkedDepots.includes(d.id))return toast("Bus is already linked to "+d.name);
+  b.linkedDepots.push(d.id);
+  logm("Bus "+b.id+" ("+b.reg+") linked as shared bus to "+d.name,d.id);
+  save();render();toast("Bus "+b.id+" linked to "+d.name);
+}
+function unlinkBus(id,depotId){
+  load();
+  const b=S.buses.find(x=>x.id===id);
+  if(!b)return toast("Bus not found");
+  if(b.entry&&b.loc===depotId)return toast("Cannot unlink bus while it is physically present at this depot. Revert entry or transfer first.");
+  if(!b.linkedDepots)b.linkedDepots=[b.home||b.loc].filter(Boolean);
+  if(b.linkedDepots.length<=1)return toast("Cannot unlink the only authorized depot for this bus.");
+  b.linkedDepots=b.linkedDepots.filter(x=>x!==depotId);
+  if(b.home===depotId)b.home=b.linkedDepots[0];
+  logm("Bus "+b.id+" ("+b.reg+") unlinked from "+dn(depotId),depotId);
+  save();render();toast("Bus unlinked from "+dn(depotId));
+}
 function manage(){
   const d=dep(curD()),others=S.depots.filter(x=>x.id!==d.id);
   const chips=(l,k)=>`<div class="chips">${l.map((x,i)=>`<span class="chip">${esc(x)}<a onclick="remRes('${k}',${i})" title="Remove">×</a></span>`).join("")||'<span class="hint">None yet</span>'}</div>`;
+  
+  // Shared fleet options
+  const unlinkedFleet=S.buses.filter(b=>!(b.linkedDepots||[b.home||b.loc]).includes(d.id));
+  const linkedShared=S.buses.filter(b=>(b.linkedDepots||[b.home||b.loc]).includes(d.id)&&(b.linkedDepots||[]).length>1);
+
   return `<div class="card f"><h2>Manage · ${esc(d.name)}</h2><p class="sub l">Add buses, schedule codes and drivers at any time. Changes appear in every view straight away.</p>
   <div class="g2"><div><label>Number of buses</label><input id="m_count" type="number" min="1" max="500" step="1" oninput="cnt('m')" placeholder="e.g., 5"><label>Paste exact buses <span class="hint">BUS CODE, REGISTRATION per line</span></label><textarea id="m_b" oninput="cnt('m')"></textarea><p class="hint" id="m_cnt">0 of 0 buses entered</p><button class="btn sm" onclick="addRes('b')">Add buses</button></div>
   <div><label>Add schedule codes</label><textarea id="m_s"></textarea><button class="btn sm" onclick="addRes('s')">Add schedules</button>${chips(d.routes,"s")}</div>
   <div><label>Add drivers</label><textarea id="m_d"></textarea><button class="btn sm" onclick="addRes('d')">Add drivers</button>${chips(d.drivers,"d")}</div></div></div>
+  
+  <div class="card f"><h3>Cross-Depot Bus Sharing &amp; Authorization</h3>
+  <p class="sub l">Authorize an existing physical bus from the central fleet to operate into <b>${esc(d.name)}</b>. The central bus identity is preserved across all depots without duplicating records.</p>
+  <div class="g2">
+    <div>
+      <label>Link existing network bus to this depot</label>
+      <select id="link_bus_select">
+        <option value="">-- Choose bus to link --</option>
+        ${unlinkedFleet.map(b=>`<option value="${b.id}">${b.id} (${b.reg}) · Current home: ${dn(b.home||b.loc)}</option>`).join("")}
+      </select>
+      <button class="btn sm" style="margin-top:8px" onclick="linkBusAction()">Link bus to ${esc(d.name)}</button>
+    </div>
+    <div>
+      <label>Currently shared buses linked to ${esc(d.name)} (${linkedShared.length})</label>
+      <div class="tw" style="max-height:220px;overflow-y:auto">
+        <table><thead><tr><th>Bus</th><th>Registration</th><th>Linked Depots</th><th>Present</th><th></th></tr></thead>
+        <tbody>
+          ${linkedShared.map(b=>`<tr>
+            <td><b>${b.id}</b></td><td>${b.reg}</td>
+            <td><small>${(b.linkedDepots||[]).map(x=>dn(x)).join(", ")}</small></td>
+            <td>${b.entry?tag(dn(b.loc),"ok"):tag("Available for entry","b")}</td>
+            <td>${b.entry&&b.loc===d.id?`<small class="hint">Present</small>`:`<button class="btn sm out" onclick="unlinkBus('${b.id}','${d.id}')">Unlink</button>`}</td>
+          </tr>`).join("")}
+        </tbody></table>
+        ${linkedShared.length?"":'<div class="empty">No shared buses currently linked.</div>'}
+      </div>
+    </div>
+  </div>
+  </div>
+
   <div class="card f"><h3>Transfer a bus to another depot</h3><div class="g2"><div><label>Bus code (currently at ${esc(d.name)})</label><input id="t_id" placeholder="e.g., BM221"></div><div><label>Destination depot</label><select id="t_to">${others.map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join("")}</select></div></div>
-  <p class="hint">The bus restarts at the destination Entry Recorder and any route / driver is cleared.</p><button class="btn" onclick="txForm()">Transfer bus</button></div>
+  <p class="hint">The bus departs and moves into In-Transit state. It becomes available for entry ONLY at the destination depot upon arrival.</p><button class="btn" onclick="txForm()">Transfer bus</button></div>
   ${auth.role==="admin"?'<div class="card"><h3>Danger zone</h3><button class="btn out" onclick="delDepot()">Delete this depot</button></div>':""}`;
 }
 function logView(){return `<div class="card"><h2>Activity Log</h2><p class="sub l">${auth.role==="admin"?"All depots":esc(dn(auth.depot))}</p>${logList(auth.role==="admin"?"":auth.depot,300)}</div>`}
@@ -448,5 +748,11 @@ function render(){
   <div class="sidebar-actions">${thBtn()}<button class="ghost" onclick="logout()">Logout</button></div></aside>
   <main class="main-content"><h1>Smart Fleet OS</h1><p class="sub">${admin?"Multi-depot admin console":auth.role==="mgr"?"Depot manager console · limited to this depot":esc(dn(auth.depot))}</p>${v}</main></div>`;
 }
+window.addEventListener("storage", e => {
+  if(e.key === KEY){
+    load();
+    render();
+  }
+});
 load();render();
 </script></body></html>

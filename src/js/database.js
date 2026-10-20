@@ -53,6 +53,21 @@
         return [];
     }
 
+    const MULTI_DEPOT_KEY = 'sfos_multi_v2';
+    function getMultiDepotState() {
+        try {
+            const raw = localStorage.getItem(MULTI_DEPOT_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+    function saveMultiDepotState(state) {
+        try {
+            localStorage.setItem(MULTI_DEPOT_KEY, JSON.stringify(state));
+        } catch (e) {}
+    }
+
     // =========================================================================
     // 1. Entry Recorder Database
     // =========================================================================
@@ -88,16 +103,66 @@
             return Object.values(data);
         },
 
-        // Buses waiting for entry approval (unapproved)
+        // Buses waiting for entry approval (unapproved) - filtered by cross-depot state
         getPending() {
-            return this.getAll().filter(b => !b.entryApproved);
+            const multi = getMultiDepotState();
+            return this.getAll().filter(b => {
+                if (b.entryApproved) return false;
+                if (multi && Array.isArray(multi.buses)) {
+                    const centralBus = multi.buses.find(x => x.id === b.busId || (x.reg && b.regNo && x.reg.toLowerCase() === b.regNo.toLowerCase()));
+                    if (centralBus) {
+                        // If already entered at another depot, remove from available-for-entry list
+                        if (centralBus.entry && centralBus.loc && centralBus.loc !== 'chandapura') {
+                            return false;
+                        }
+                        // If in transit to another depot, not available here
+                        if (centralBus.transferTo && centralBus.transferTo !== 'chandapura') {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            });
         },
 
-        // Approve entry for a bus -> shifts bus into Cleaner & Charging databases
+        // Approve entry for a bus -> shifts bus into Cleaner & Charging databases + updates central multi-depot
         approveBus(busId, operator = 'Entry Recorder') {
             const data = this.init();
             if (!data[busId]) {
                 throw new Error(`Bus ${busId} not found in Entry Recorder Database`);
+            }
+
+            // Central multi-depot cross-check & concurrency enforcement
+            const multi = getMultiDepotState();
+            if (multi && Array.isArray(multi.buses)) {
+                const centralBus = multi.buses.find(x => x.id === busId || (x.reg && data[busId].regNo && x.reg.toLowerCase() === data[busId].regNo.toLowerCase()));
+                if (centralBus) {
+                    if (centralBus.entry && centralBus.loc && centralBus.loc !== 'chandapura') {
+                        throw new Error(`Concurrent Entry Conflict: Bus ${busId} is already marked as entered at depot "${centralBus.loc}". Entry at Chandapura is blocked.`);
+                    }
+                    if (centralBus.transferTo && centralBus.transferTo !== 'chandapura') {
+                        throw new Error(`Transit Restriction: Bus ${busId} is currently in transit to "${centralBus.transferTo}". Arrival can only be recorded there.`);
+                    }
+                    // Update central record
+                    centralBus.loc = 'chandapura';
+                    centralBus.entry = true;
+                    centralBus.entryDepot = 'chandapura';
+                    centralBus.entryAt = new Date().toISOString();
+                    centralBus.transferTo = null;
+                    centralBus.transferFrom = null;
+                    centralBus.transferStatus = null;
+                    if (!centralBus.linkedDepots) centralBus.linkedDepots = ['chandapura'];
+                    if (!centralBus.linkedDepots.includes('chandapura')) centralBus.linkedDepots.push('chandapura');
+
+                    if (Array.isArray(multi.log)) {
+                        multi.log.unshift({
+                            t: new Date().toLocaleTimeString('en-GB'),
+                            m: `Bus ${busId} (${centralBus.reg}) entered at Chandapura Depot (via Entry Recorder UI)`,
+                            d: ['chandapura']
+                        });
+                    }
+                    saveMultiDepotState(multi);
+                }
             }
 
             data[busId].entryApproved = true;
