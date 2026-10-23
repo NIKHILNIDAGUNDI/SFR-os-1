@@ -6,6 +6,18 @@ let batteryChartInstance = null;
 
 // Initialize on Load
 window.addEventListener('DOMContentLoaded', () => {
+  const seenScheduleIds = new Set();
+  for (let i = SCHEDULES.length - 1; i >= 0; i--) {
+    if (seenScheduleIds.has(SCHEDULES[i].id)) {
+      SCHEDULES.splice(i, 1);
+    } else {
+      seenScheduleIds.add(SCHEDULES[i].id);
+    }
+  }
+  document.getElementById('depotScheduleCount').textContent = SCHEDULES.length;
+  document.getElementById('navScheduleCount').textContent = `${SCHEDULES.length} Sched`;
+  document.getElementById('scheduleTableCount').textContent = SCHEDULES.length;
+  solveAllSchedulesGlobal(true);
   initMap();
   initSimulatedLiveBuses();
   renderScheduleTable();
@@ -681,7 +693,9 @@ function renderScheduleRouteOptions() {
   if (!select) return;
 
   const availableSchedules = SCHEDULES.filter(schedule => !schedule.assignedBus);
-  select.innerHTML = '<option value="">Choose a route to assign a bus and driver</option>';
+  select.innerHTML = `<option value="">${availableSchedules.length
+    ? 'Choose a route to assign a bus and driver'
+    : 'No unassigned routes available'}</option>`;
 
   availableSchedules.forEach(schedule => {
     const option = document.createElement('option');
@@ -830,50 +844,53 @@ function solveAllSchedulesGlobal(quiet = false) {
     return b.singleChargeReq - a.singleChargeReq;
   });
 
-  // Prioritize Shed-Out Ready first, then staged
-  const availBuses = [...FLEET].sort((a,b) => {
-    const readyA = a.turnaroundState === 'Shed-Out Ready' ? 1 : 0;
-    const readyB = b.turnaroundState === 'Shed-Out Ready' ? 1 : 0;
-    if (readyA !== readyB) return readyB - readyA;
-    return b.actualRange - a.actualRange;
+  const eligibleBuses = new Map(sortedSchedules.map(schedule => [
+    schedule.id,
+    FLEET.filter(bus => validateAssignment(bus, schedule).valid).sort((a, b) =>
+      Number(b.turnaroundState === 'Shed-Out Ready') - Number(a.turnaroundState === 'Shed-Out Ready') ||
+      (a.actualRange - schedule.singleChargeReq) - (b.actualRange - schedule.singleChargeReq)
+    )
+  ]));
+  const busAssignments = new Map();
+  const scheduleAssignments = new Map();
+
+  function assignSchedule(schedule, visitedBuses) {
+    for (const bus of eligibleBuses.get(schedule.id)) {
+      if (visitedBuses.has(bus.busId)) continue;
+      visitedBuses.add(bus.busId);
+
+      const previousSchedule = busAssignments.get(bus.busId);
+      if (!previousSchedule || assignSchedule(previousSchedule, visitedBuses)) {
+        busAssignments.set(bus.busId, schedule);
+        scheduleAssignments.set(schedule.id, bus);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  sortedSchedules.forEach(schedule => assignSchedule(schedule, new Set()));
+
+  SCHEDULES.forEach(schedule => {
+    const bus = scheduleAssignments.get(schedule.id);
+    schedule.assignedBus = bus ? bus.busId : null;
+    schedule.assignedDriver = bus ? bus.driver : null;
   });
 
-  const busAssignedMap = new Set();
-  let assignedCount = 0;
-
-  sortedSchedules.forEach(sched => {
-    let candidate = availBuses.find(b => 
-      !busAssignedMap.has(b.busId) &&
-      sched.allowedCats.includes(b.cat) &&
-      b.actualRange >= (sched.singleChargeReq + 4)
-    );
-    if (!candidate) {
-      candidate = availBuses.find(b => 
-        !busAssignedMap.has(b.busId) &&
-        sched.allowedCats.includes(b.cat) &&
-        b.actualRange >= sched.singleChargeReq
-      );
-    }
-    if (!candidate) {
-      candidate = availBuses.find(b => 
-        sched.allowedCats.includes(b.cat) &&
-        b.actualRange >= sched.singleChargeReq
-      );
-    }
-
-    if (candidate) {
-      sched.assignedBus = candidate.busId;
-      sched.assignedDriver = candidate.driver;
-      busAssignedMap.add(candidate.busId);
-      assignedCount++;
-    }
-  });
+  const assignedCount = scheduleAssignments.size;
+  const status = document.getElementById('scheduleAutoAssignStatus');
+  if (status) {
+    const unassignedCount = SCHEDULES.length - assignedCount;
+    status.textContent = unassignedCount
+      ? `Automatically assigned ${assignedCount} of ${SCHEDULES.length} schedules. ${unassignedCount} need an eligible unassigned bus.`
+      : `Automatically assigned all ${assignedCount} schedules to eligible buses and drivers.`;
+  }
 
   renderScheduleTable();
   renderGanttTimeline();
   updateKpiMetrics();
   if (!quiet) {
-    alert(`1-Click Dispatch Solved! Assigned ${assignedCount} / ${SCHEDULES.length} Dedicated EV Schedules with 100% Slide 4 Compliance.`);
+    alert(`Automatic schedule allocation complete: ${assignedCount} of ${SCHEDULES.length} schedules assigned to eligible buses and drivers.`);
   }
 }
 

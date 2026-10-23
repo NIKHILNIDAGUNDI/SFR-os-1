@@ -38,7 +38,7 @@
           DEPOT 44 CHANDAPURA LIVE
         </span>
       </h1>
-      <div class="depot-tag">122 Switch Electric Buses • 130 Dedicated EV Schedules • Multi-Actor Governance</div>
+      <div class="depot-tag">122 Switch Electric Buses • <span id="depotScheduleCount">121</span> Dedicated EV Schedules • Multi-Actor Governance</div>
     </div>
   </div>
 
@@ -70,7 +70,7 @@
   <button class="nav-tab-btn" onclick="switchTab('tab-solver', this)">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07l14.14-14.14"/></svg>
     Schedule Allocation & Readiness
-    <span class="nav-tab-badge">130 Sched</span>
+    <span class="nav-tab-badge" id="navScheduleCount">121 Sched</span>
   </button>
   <button class="nav-tab-btn" onclick="switchTab('tab-wash', this)">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
@@ -179,7 +179,7 @@
         <div>
           <h3 style="font-size:13.5px; font-weight:800; color:var(--text-bright);">Dedicated Bus to Dedicated Schedule Allocation</h3>
           <p style="font-size:11.5px; color:var(--text-secondary); margin-top:2px;">
-            Select a route to automatically assign a compatible shed-out-ready bus and its driver. Use the table below to review or adjust assignments.
+            Schedules are automatically matched to compatible buses and drivers. Select a remaining route to assign an available shed-out-ready bus.
           </p>
         </div>
         <div style="display:flex; gap:10px;">
@@ -222,7 +222,7 @@
       <div class="panel-header-bar">
         <div class="panel-title-area">
           <h2>Dedicated Schedule Allocation Table</h2>
-          <p>130 Switch Concession Schedules with Interactive Dedicated Bus Allocation</p>
+          <p><span id="scheduleTableCount">121</span> Switch Concession Schedules with Interactive Dedicated Bus Allocation</p>
         </div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
           <label for="scheduleRouteSelect" style="font-size:11px; font-weight:700; color:var(--text-secondary);">Select Route / Schedule</label>
@@ -230,7 +230,7 @@
             <option value="">Choose a route to assign a bus and driver</option>
           </select>
           <select class="custom-select" id="shiftFilter" onchange="renderScheduleTable()">
-            <option value="ALL">All Shifts (130)</option>
+            <option value="ALL">All Shifts</option>
             <option value="Night Halt">Night Halt (71)</option>
             <option value="General shift">General Shift (39)</option>
             <option value="Shift A">Shift A (1)</option>
@@ -845,7 +845,7 @@
         <div style="flex:1; padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px;" id="assistantChatLog">
           <div style="background:var(--bg-card-subtle); padding:12px 16px; border-radius:8px; border:1px solid var(--border-card); max-width:88%; line-height:1.5;">
             <div style="font-weight:700; color:var(--brand-primary); margin-bottom:4px;">?? Gemini Transit Dispatch Assistant:</div>
-            Greetings, Depot Manager. All 122 Switch Electric Buses are synchronized across Chandapura Depot 44. 130 Dedicated EV concession schedules are solvent. Automated 20-min wash bays and defect governance consoles are live. Ask me anything about turnaround wait times, recurring complaints, or schedule swaps.
+            Greetings, Depot Manager. All 122 Switch Electric Buses are synchronized across Chandapura Depot 44. Dedicated EV concession schedules are allocated automatically. Automated 20-min wash bays and defect governance consoles are live. Ask me anything about turnaround wait times, recurring complaints, or schedule swaps.
           </div>
         </div>
 
