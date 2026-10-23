@@ -6,7 +6,6 @@ let batteryChartInstance = null;
 
 // Initialize on Load
 window.addEventListener('DOMContentLoaded', () => {
-  solveAllSchedulesGlobal(true);
   initMap();
   initSimulatedLiveBuses();
   renderScheduleTable();
@@ -595,6 +594,7 @@ function validateAssignment(bus, schedule) {
 
 function renderScheduleTable() {
   const tbody = document.getElementById('scheduleTableBody');
+  renderScheduleRouteOptions();
   const shiftVal = document.getElementById('shiftFilter').value;
   const readinessVal = document.getElementById('readinessFilter').value;
   const searchVal = document.getElementById('schedSearch').value.toLowerCase().trim();
@@ -674,6 +674,56 @@ function renderScheduleTable() {
       </tr>
     `;
   });
+}
+
+function renderScheduleRouteOptions() {
+  const select = document.getElementById('scheduleRouteSelect');
+  if (!select) return;
+
+  const availableSchedules = SCHEDULES.filter(schedule => !schedule.assignedBus);
+  select.innerHTML = '<option value="">Choose a route to assign a bus and driver</option>';
+
+  availableSchedules.forEach(schedule => {
+    const option = document.createElement('option');
+    option.value = schedule.id;
+    option.textContent = `${schedule.id} | Route ${schedule.route} | ${schedule.shift}`;
+    select.appendChild(option);
+  });
+}
+
+function autoAssignSelectedSchedule(scheduleId) {
+  if (!scheduleId) return;
+
+  const status = document.getElementById('scheduleAutoAssignStatus');
+  const schedule = SCHEDULES.find(item => item.id === scheduleId);
+  if (!schedule || schedule.assignedBus) {
+    status.textContent = 'That route is already assigned or is no longer available. Choose another route.';
+    renderScheduleRouteOptions();
+    return;
+  }
+
+  const assignedBusIds = new Set(SCHEDULES.map(item => item.assignedBus).filter(Boolean));
+  const categoryRank = { C: 1, B: 2, A: 3 };
+  const candidate = FLEET.filter(bus =>
+    !assignedBusIds.has(bus.busId) &&
+    bus.turnaroundState === 'Shed-Out Ready' &&
+    bus.driver &&
+    validateAssignment(bus, schedule).valid
+  ).sort((a, b) =>
+    categoryRank[a.cat] - categoryRank[b.cat] || a.actualRange - b.actualRange
+  )[0];
+
+  if (!candidate) {
+    status.textContent = `No unassigned shed-out-ready bus and driver meet the requirements for ${schedule.id} (${schedule.route}).`;
+    return;
+  }
+
+  schedule.assignedBus = candidate.busId;
+  schedule.assignedDriver = candidate.driver;
+  status.textContent = `Assigned ${candidate.busId} and driver ${candidate.driver} to ${schedule.id} (${schedule.route}).`;
+  renderScheduleTable();
+  renderGanttTimeline();
+  updateKpiMetrics();
 }
 
 function onScheduleBusChange(schedId, newBusId) {
