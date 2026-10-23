@@ -329,7 +329,7 @@
             <div id="scheduler-alert" class="alert"></div>
 
             <div class="form-group">
-                <label>Select Route / Schedule</label>
+                <label for="scheduler-route-select">Select Route / Schedule</label>
                 <select id="scheduler-route-select" onchange="onScheduleSelected()"></select>
             </div>
 
@@ -338,11 +338,6 @@
                 <!-- Reasoning displayed here -->
             </div>
 
-            <div class="form-group">
-                <label>Select Driver</label>
-                <select id="scheduler-driver-select"></select>
-            </div>
-            <button id="final-assign-btn" onclick="finalizeAssignment()" disabled>Finalize Assignment</button>
             <button class="logout-btn" onclick="schedulerLogout()">Logout</button>
         </div>
     </div>
@@ -542,43 +537,29 @@
                     scheduleSelect.appendChild(opt);
                 });
 
-                const driverSelect = document.getElementById('scheduler-driver-select');
-                driverSelect.innerHTML = '<option value="">-- Choose Driver --</option>';
-
-                const allDrivers = Array.from(new Set(window.FLEET.map(b => b.driver).filter(Boolean))).sort();
-                const assignedDrivers = window.FleetDB.Scheduler.getAssignments().map(b => b.assignedDriver).filter(Boolean);
-
-                // Store available drivers for use in evaluateBestBus
-                window.availableDrivers = allDrivers.filter(d => !assignedDrivers.includes(d));
-
-                window.availableDrivers.forEach(d => {
-                    const opt = document.createElement('option');
-                    opt.value = sanitizeInput(d);
-                    opt.text = d;
-                    driverSelect.appendChild(opt);
-                });
             }
 
             window.onScheduleSelected = function () {
                 requireSchedulerRole();
-                evaluateBestBus();
+                clearAlerts();
+                assignSelectedSchedule();
             };
 
-            window.evaluateBestBus = function () {
+            function assignSelectedSchedule() {
                 requireSchedulerRole();
                 const scheduleId = sanitizeInput(document.getElementById('scheduler-route-select').value);
                 const resultBox = document.getElementById('auto-assignment-result');
-                const assignBtn = document.getElementById('final-assign-btn');
-                const driverSelect = document.getElementById('scheduler-driver-select');
+                resultBox.style.display = 'none';
 
                 if (!scheduleId) {
-                    resultBox.style.display = 'none';
-                    assignBtn.disabled = true;
                     return;
                 }
 
                 const schedule = window.SCHEDULES.find(s => s.id === scheduleId);
-                if (!schedule) return;
+                if (!schedule) {
+                    showAlert('scheduler', 'error', 'The selected route schedule could not be found.');
+                    return;
+                }
 
                 // Get ready pool from SchedulerDB (double-approved and unassigned buses)
                 const pool = window.FleetDB.Scheduler.getReadyPool();
@@ -592,8 +573,6 @@
                     resultBox.style.display = 'block';
                     const safeCats = sanitizeInput(activeCats.join(', '));
                     resultBox.innerHTML = `<p style="color:var(--status-error); font-weight:700; font-size:1.05rem; margin:0;">&#9888; No bus available for this route! No ready bus meets both range (&ge;${schedule.singleChargeReq} km) and category ([${safeCats}]) requirements.</p>`;
-                    assignBtn.disabled = true;
-                    window.currentBestBusId = null;
                     return;
                 }
 
@@ -604,78 +583,48 @@
                 });
 
                 const bestBus = validBuses[0];
-                window.currentBestBusId = bestBus.busId;
+                const assignedDrivers = window.FleetDB.Scheduler.getAssignments()
+                    .map(bus => bus.assignedDriver)
+                    .filter(Boolean);
+                const availableDrivers = Array.from(new Set(window.FLEET.map(bus => bus.driver).filter(Boolean)))
+                    .filter(driver => !assignedDrivers.includes(driver));
+                const driverName = bestBus.driver && availableDrivers.includes(bestBus.driver)
+                    ? bestBus.driver
+                    : availableDrivers[0];
 
-                resultBox.style.display = 'block';
+                if (!driverName) {
+                    resultBox.style.display = 'block';
+                    resultBox.innerHTML = '<p style="color:var(--status-error); font-weight:700; font-size:1.05rem; margin:0;">&#9888; No available driver can be assigned to this route.</p>';
+                    return;
+                }
 
                 const safeBestBusId = sanitizeInput(bestBus.busId);
                 const safeBestBusReg = sanitizeInput(bestBus.regNo);
                 const safeCat = sanitizeInput(bestBus.cat);
                 const safeActiveCats = sanitizeInput(activeCats.join(', '));
+                const safeDriverName = sanitizeInput(driverName);
 
-                resultBox.innerHTML = `
-                <div style="font-weight:600; font-size:1.05rem; margin-bottom:0.25rem;">
-                    &#127919; Recommended: Bus ${safeBestBusId} <span style="font-weight:normal; color:var(--text-secondary);">(${safeBestBusReg})</span>
-                </div>
-                <div style="font-size:0.9rem; color:var(--text-secondary); line-height:1.4;">
-                    <strong>Reasoning:</strong> Matches Category <strong>${safeCat}</strong> (Allowed: ${safeActiveCats}).
-                    Actual range of <strong>${bestBus.actualRange} km</strong> comfortably fulfills route requirement of <strong>${schedule.singleChargeReq} km</strong>
-                    with an optimal safety buffer of +${(bestBus.actualRange - schedule.singleChargeReq).toFixed(1)} km.
-                    ${bestBus.driver ? `<br><strong>Default Driver:</strong> ${sanitizeInput(bestBus.driver)} (auto-selected, changeable below).` : ''}
-                </div>
-            `;
-
-                assignBtn.disabled = false;
-
-                // Auto-select the bus's default driver
-                if (bestBus.driver) {
-                    let driverFound = false;
-                    for (let i = 0; i < driverSelect.options.length; i++) {
-                        if (driverSelect.options[i].value === bestBus.driver) {
-                            driverSelect.selectedIndex = i;
-                            driverFound = true;
-                            break;
-                        }
-                    }
-                    // If the bus's default driver isn't in the available list, add them at the top
-                    if (!driverFound) {
-                        const opt = document.createElement('option');
-                        opt.value = sanitizeInput(bestBus.driver);
-                        opt.text = bestBus.driver + ' (Default)';
-                        driverSelect.insertBefore(opt, driverSelect.options[1]);
-                        driverSelect.selectedIndex = 1;
-                    }
-                } else {
-                    // No default driver — select the first available driver if any
-                    driverSelect.selectedIndex = driverSelect.options.length > 1 ? 1 : 0;
-                }
-            };
-
-            window.finalizeAssignment = function () {
-                requireSchedulerRole();
-                const scheduleId = sanitizeInput(document.getElementById('scheduler-route-select').value);
-                const driverName = sanitizeInput(document.getElementById('scheduler-driver-select').value);
-                const busId = window.currentBestBusId;
-
-                if (!scheduleId || !driverName || !busId) {
-                    showAlert('scheduler', 'error', 'Please ensure a route, driver, and valid bus are selected.');
+                try {
+                    window.FleetDB.Scheduler.assignBus(bestBus.busId, scheduleId, driverName);
+                } catch (e) {
+                    showAlert('scheduler', 'error', 'Error assigning bus: ' + e.message);
                     return;
                 }
 
-                try {
-                    // Assign bus using SchedulerDB
-                    window.FleetDB.Scheduler.assignBus(busId, scheduleId, driverName);
-
-                    showAlert('scheduler', 'success', `Success! Bus ${busId} dynamically allocated to Route Schedule ${scheduleId} with Driver ${driverName}.`);
-
-                    document.getElementById('auto-assignment-result').style.display = 'none';
-                    document.getElementById('final-assign-btn').disabled = true;
-                    window.currentBestBusId = null;
-                    initSchedulerView(); // Refresh the view
-                } catch (e) {
-                    showAlert('scheduler', 'error', 'Error assigning bus: ' + e.message);
-                }
-            };
+                resultBox.style.display = 'block';
+                resultBox.innerHTML = `
+                    <div style="font-weight:600; font-size:1.05rem; margin-bottom:0.25rem;">
+                        &#9989; Assigned: Bus ${safeBestBusId} <span style="font-weight:normal; color:var(--text-secondary);">(${safeBestBusReg})</span> with ${safeDriverName}
+                    </div>
+                    <div style="font-size:0.9rem; color:var(--text-secondary); line-height:1.4;">
+                        <strong>Reasoning:</strong> Matches Category <strong>${safeCat}</strong> (Allowed: ${safeActiveCats}).
+                        Actual range of <strong>${bestBus.actualRange} km</strong> comfortably fulfills route requirement of <strong>${schedule.singleChargeReq} km</strong>
+                        with a safety buffer of +${(bestBus.actualRange - schedule.singleChargeReq).toFixed(1)} km.
+                    </div>
+                    `;
+                showAlert('scheduler', 'success', `Bus ${bestBus.busId} and driver ${driverName} assigned to route schedule ${scheduleId}.`);
+                initSchedulerView();
+            }
         };
     </script>
 
