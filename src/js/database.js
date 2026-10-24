@@ -714,6 +714,7 @@
                 status: 'PROPOSED',
                 schedule,
                 bus: bestBus,
+                busCandidates: validBuses.slice(0, 3),
                 driver: bestDriver,
                 bufferKm,
                 reason: `Recommended Bus ${bestBus.busId} (${bestBus.regNo}, Cat ${bestBus.cat}) with +${bufferKm} km safety buffer and Driver ${bestDriver} (${schedule.driverReq || 'Standard'} qualified).`
