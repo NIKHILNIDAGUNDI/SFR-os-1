@@ -12,8 +12,25 @@
  *  Entry Recorder: approved -->> Cleaner AND Charging Incharge: approved from BOTH -->> Scheduler
  */
 
-(function (window) {
+(function (globalContext) {
     'use strict';
+
+    const rootScope = typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : globalContext || {});
+
+    // In-memory fallback if localStorage is unavailable
+    const memoryStore = {};
+    function getStorage() {
+        try {
+            if (typeof localStorage !== 'undefined' && localStorage) return localStorage;
+            if (rootScope && rootScope.localStorage) return rootScope.localStorage;
+        } catch (e) {}
+        return {
+            getItem: (k) => (Object.prototype.hasOwnProperty.call(memoryStore, k) ? memoryStore[k] : null),
+            setItem: (k, v) => { memoryStore[k] = String(v); },
+            removeItem: (k) => { delete memoryStore[k]; },
+            clear: () => { Object.keys(memoryStore).forEach(k => delete memoryStore[k]); }
+        };
+    }
 
     // Storage Keys for the 4 separate databases
     const DB_KEYS = {
@@ -26,7 +43,7 @@
     // Helper: Safe JSON load/save
     function loadDB(key, fallback = {}) {
         try {
-            const raw = localStorage.getItem(key);
+            const raw = getStorage().getItem(key);
             return raw ? JSON.parse(raw) : fallback;
         } catch (e) {
             console.error(`Error loading database [${key}]:`, e);
@@ -36,10 +53,22 @@
 
     function saveDB(key, data) {
         try {
-            localStorage.setItem(key, JSON.stringify(data));
+            getStorage().setItem(key, JSON.stringify(data));
         } catch (e) {
             console.error(`Error saving database [${key}]:`, e);
         }
+    }
+
+    function dispatchFleetEvent(stage, details = {}) {
+        try {
+            if (rootScope && typeof rootScope.dispatchEvent === 'function') {
+                if (typeof CustomEvent !== 'undefined') {
+                    rootScope.dispatchEvent(new CustomEvent('fleet-db-updated', { detail: { stage, ...details } }));
+                } else {
+                    rootScope.dispatchEvent({ type: 'fleet-db-updated', detail: { stage, ...details } });
+                }
+            }
+        } catch (e) {}
     }
 
     // Helper: get base fleet data
@@ -47,8 +76,8 @@
         if (typeof FLEET !== 'undefined' && Array.isArray(FLEET) && FLEET.length > 0) {
             return FLEET;
         }
-        if (window.FLEET && Array.isArray(window.FLEET)) {
-            return window.FLEET;
+        if (rootScope.FLEET && Array.isArray(rootScope.FLEET)) {
+            return rootScope.FLEET;
         }
         return [];
     }
@@ -56,7 +85,7 @@
     const MULTI_DEPOT_KEY = 'sfos_multi_v2';
     function getMultiDepotState() {
         try {
-            const raw = localStorage.getItem(MULTI_DEPOT_KEY);
+            const raw = getStorage().getItem(MULTI_DEPOT_KEY);
             return raw ? JSON.parse(raw) : null;
         } catch (e) {
             return null;
@@ -64,8 +93,35 @@
     }
     function saveMultiDepotState(state) {
         try {
-            localStorage.setItem(MULTI_DEPOT_KEY, JSON.stringify(state));
+            getStorage().setItem(MULTI_DEPOT_KEY, JSON.stringify(state));
         } catch (e) {}
+    }
+
+    // Mirror workflow transitions into Admin's physical-bus record. The role
+    // databases remain authoritative for their own approval and assignment data.
+    function syncMultiDepotBus(busId, changes, message) {
+        try {
+            const multi = getMultiDepotState();
+            if (!multi || !Array.isArray(multi.buses)) return false;
+            const stageBus = (typeof changes.regNo === 'string' ? changes.regNo : null);
+            const bus = multi.buses.find(item => (item.id || item.busId) === busId ||
+                (stageBus && item.reg && item.reg.toLowerCase() === stageBus.toLowerCase()));
+            if (!bus) return false;
+            Object.assign(bus, changes);
+            if (message && Array.isArray(multi.log)) {
+                const depotId = bus.loc || bus.entryDepot || bus.home;
+                multi.log.unshift({
+                    t: new Date().toLocaleTimeString('en-GB'),
+                    m: message,
+                    d: depotId ? [depotId] : []
+                });
+                multi.log = multi.log.slice(0, 300);
+            }
+            saveMultiDepotState(multi);
+            return true;
+        } catch (e) {
+            return false;
+        }
     }
 
     // =========================================================================
@@ -104,78 +160,89 @@
         },
 
         // Buses waiting for entry approval (unapproved) - filtered by cross-depot state
-        getPending() {
+        getPending(depotId = 'chandapura') {
             const multi = getMultiDepotState();
-            return this.getAll().filter(b => {
-                if (b.entryApproved) return false;
-                if (multi && Array.isArray(multi.buses)) {
-                    const centralBus = multi.buses.find(x => x.id === b.busId || (x.reg && b.regNo && x.reg.toLowerCase() === b.regNo.toLowerCase()));
-                    if (centralBus) {
-                        // If already entered at another depot, remove from available-for-entry list
-                        if (centralBus.entry && centralBus.loc && centralBus.loc !== 'chandapura') {
-                            return false;
-                        }
-                        // If in transit to another depot, not available here
-                        if (centralBus.transferTo && centralBus.transferTo !== 'chandapura') {
-                            return false;
-                        }
-                    }
-                }
-                return true;
+            const centralBuses = multi && Array.isArray(multi.buses) ? multi.buses : [];
+            const availableAtDepot = bus => {
+                const linked = Array.isArray(bus.linkedDepots) && bus.linkedDepots.length
+                    ? bus.linkedDepots : [bus.home || bus.loc].filter(Boolean);
+                return linked.includes(depotId) && !bus.maintenance && !bus.entry &&
+                    !(bus.transferTo && bus.transferTo !== depotId);
+            };
+            const rows = this.getAll().filter(record => {
+                if (record.entryApproved) return false;
+                const central = centralBuses.find(bus => bus.id === record.busId ||
+                    (bus.reg && record.regNo && bus.reg.toLowerCase() === record.regNo.toLowerCase()));
+                return central ? availableAtDepot(central) : depotId === 'chandapura';
             });
+            const known = new Set(rows.map(record => record.busId));
+            centralBuses.forEach(bus => {
+                const id = bus.id || bus.busId;
+                if (!id || known.has(id) || !availableAtDepot(bus)) return;
+                const record = this.init()[id];
+                if (record && record.entryApproved) return;
+                rows.push(record || {
+                    busId: id, regNo: bus.reg || bus.regNo || 'N/A', cat: bus.cat || 'B',
+                    actualRange: Number(bus.actualRange || 90), entryApproved: false, depotId
+                });
+            });
+            return rows;
         },
 
-        // Approve entry for a bus -> shifts bus into Cleaner & Charging databases + updates central multi-depot
-        approveBus(busId, operator = 'Entry Recorder') {
+        // Approve entry at the authenticated depot and forward to the next role databases.
+        approveBus(busId, operator = 'Entry Recorder', depotId = 'chandapura') {
             const data = this.init();
-            if (!data[busId]) {
-                throw new Error(`Bus ${busId} not found in Entry Recorder Database`);
-            }
-
-            // Central multi-depot cross-check & concurrency enforcement
             const multi = getMultiDepotState();
-            if (multi && Array.isArray(multi.buses)) {
-                const centralBus = multi.buses.find(x => x.id === busId || (x.reg && data[busId].regNo && x.reg.toLowerCase() === data[busId].regNo.toLowerCase()));
-                if (centralBus) {
-                    if (centralBus.entry && centralBus.loc && centralBus.loc !== 'chandapura') {
-                        throw new Error(`Concurrent Entry Conflict: Bus ${busId} is already marked as entered at depot "${centralBus.loc}". Entry at Chandapura is blocked.`);
-                    }
-                    if (centralBus.transferTo && centralBus.transferTo !== 'chandapura') {
-                        throw new Error(`Transit Restriction: Bus ${busId} is currently in transit to "${centralBus.transferTo}". Arrival can only be recorded there.`);
-                    }
-                    // Update central record
-                    centralBus.loc = 'chandapura';
-                    centralBus.entry = true;
-                    centralBus.entryDepot = 'chandapura';
-                    centralBus.entryAt = new Date().toISOString();
-                    centralBus.transferTo = null;
-                    centralBus.transferFrom = null;
-                    centralBus.transferStatus = null;
-                    if (!centralBus.linkedDepots) centralBus.linkedDepots = ['chandapura'];
-                    if (!centralBus.linkedDepots.includes('chandapura')) centralBus.linkedDepots.push('chandapura');
-
-                    if (Array.isArray(multi.log)) {
-                        multi.log.unshift({
-                            t: new Date().toLocaleTimeString('en-GB'),
-                            m: `Bus ${busId} (${centralBus.reg}) entered at Chandapura Depot (via Entry Recorder UI)`,
-                            d: ['chandapura']
-                        });
-                    }
-                    saveMultiDepotState(multi);
-                }
+            const centralBus = multi && Array.isArray(multi.buses)
+                ? multi.buses.find(bus => bus.id === busId || bus.busId === busId ||
+                    (bus.reg && data[busId]?.regNo && bus.reg.toLowerCase() === data[busId].regNo.toLowerCase()))
+                : null;
+            if (!data[busId] && centralBus && depotId !== 'chandapura') {
+                data[busId] = {
+                    busId, regNo: centralBus.reg || centralBus.regNo || 'N/A', cat: centralBus.cat || 'B',
+                    actualRange: Number(centralBus.actualRange || 90), driver: centralBus.driver || null,
+                    entryApproved: false, approvedAt: null, operator: null
+                };
             }
-
+            if (!data[busId]) throw new Error(`Bus ${busId} not found in Entry Recorder Database`);
+            if (centralBus) {
+                const linked = Array.isArray(centralBus.linkedDepots) && centralBus.linkedDepots.length
+                    ? centralBus.linkedDepots : [centralBus.home || centralBus.loc].filter(Boolean);
+                if (!linked.includes(depotId)) throw new Error(`Bus ${busId} is not linked to ${depotId}`);
+                if (centralBus.entry && centralBus.loc && centralBus.loc !== depotId) {
+                    throw new Error(`Concurrent Entry Conflict: Bus ${busId} is already at depot "${centralBus.loc}".`);
+                }
+                if (centralBus.transferTo && centralBus.transferTo !== depotId) {
+                    throw new Error(`Transit Restriction: Bus ${busId} can only be received at "${centralBus.transferTo}".`);
+                }
+                centralBus.loc = depotId;
+                centralBus.entry = true;
+                centralBus.entryDepot = depotId;
+                centralBus.entryAt = new Date().toISOString();
+                centralBus.transferTo = null;
+                centralBus.transferFrom = null;
+                centralBus.transferStatus = null;
+                if (Array.isArray(multi.log)) {
+                    multi.log.unshift({
+                        t: new Date().toLocaleTimeString('en-GB'),
+                        m: `Bus ${busId} (${centralBus.reg || data[busId].regNo}) entered at ${depotId} (via Entry Recorder UI)`,
+                        d: [depotId]
+                    });
+                    multi.log = multi.log.slice(0, 300);
+                }
+                saveMultiDepotState(multi);
+            } else if (depotId !== 'chandapura') {
+                throw new Error(`Bus ${busId} has no linked fleet record for ${depotId}`);
+            }
             data[busId].entryApproved = true;
+            data[busId].depotId = depotId;
             data[busId].approvedAt = new Date().toISOString();
             data[busId].operator = operator;
             saveDB(DB_KEYS.ENTRY_RECORDER, data);
 
-            // FLOW: Entry recorder: yes -->> shifts to Cleaner AND Charging Incharge
             CleanerDB.syncFromEntry(data[busId]);
             ChargingDB.syncFromEntry(data[busId]);
-
-            // Dispatch event for reactive UI updates
-            window.dispatchEvent(new CustomEvent('fleet-db-updated', { detail: { stage: 'entry', busId } }));
+            window.dispatchEvent(new CustomEvent('fleet-db-updated', { detail: { stage: 'entry', busId, depotId } }));
             return data[busId];
         },
 
@@ -210,10 +277,14 @@
                     regNo: busRecord.regNo,
                     cat: busRecord.cat,
                     actualRange: busRecord.actualRange,
+                    depotId: busRecord.depotId || 'chandapura',
                     cleanApproved: false,
                     cleanedAt: null,
                     operator: null
                 };
+                saveDB(DB_KEYS.CLEANER, data);
+            } else {
+                data[busRecord.busId].depotId = busRecord.depotId || 'chandapura';
                 saveDB(DB_KEYS.CLEANER, data);
             }
         },
@@ -223,20 +294,22 @@
         },
 
         // Buses that have entered depot but not yet cleaned
-        getPending() {
-            return this.getAll().filter(b => !b.cleanApproved);
+        getPending(depotId = 'chandapura') {
+            return this.getAll().filter(b => !b.cleanApproved && (b.depotId || 'chandapura') === depotId);
         },
 
-        approveBus(busId, operator = 'Cleaning Staff') {
+        approveBus(busId, operator = 'Cleaning Staff', depotId = 'chandapura') {
             const data = this.init();
-            if (!data[busId]) {
-                throw new Error(`Bus ${busId} not found in Cleaner Database`);
+            if (!data[busId] || (data[busId].depotId || 'chandapura') !== depotId) {
+                throw new Error(`Bus ${busId} is not pending in the Cleaner database for ${depotId}`);
             }
 
             data[busId].cleanApproved = true;
             data[busId].cleanedAt = new Date().toISOString();
             data[busId].operator = operator;
             saveDB(DB_KEYS.CLEANER, data);
+            syncMultiDepotBus(busId, { clean: true, cleanedAt: data[busId].cleanedAt },
+                `Bus ${busId} cleaning approved`);
 
             // Check if Charging has also approved -> if so, bus enters Scheduler
             SchedulerDB.checkAndEnroll(busId);
@@ -271,10 +344,14 @@
                     regNo: busRecord.regNo,
                     cat: busRecord.cat,
                     actualRange: busRecord.actualRange,
+                    depotId: busRecord.depotId || 'chandapura',
                     chargeApproved: false,
                     chargedAt: null,
                     operator: null
                 };
+                saveDB(DB_KEYS.CHARGING, data);
+            } else {
+                data[busRecord.busId].depotId = busRecord.depotId || 'chandapura';
                 saveDB(DB_KEYS.CHARGING, data);
             }
         },
@@ -284,20 +361,22 @@
         },
 
         // Buses that have entered depot but not yet charge approved
-        getPending() {
-            return this.getAll().filter(b => !b.chargeApproved);
+        getPending(depotId = 'chandapura') {
+            return this.getAll().filter(b => !b.chargeApproved && (b.depotId || 'chandapura') === depotId);
         },
 
-        approveBus(busId, operator = 'Charging Incharge') {
+        approveBus(busId, operator = 'Charging Incharge', depotId = 'chandapura') {
             const data = this.init();
-            if (!data[busId]) {
-                throw new Error(`Bus ${busId} not found in Charging Database`);
+            if (!data[busId] || (data[busId].depotId || 'chandapura') !== depotId) {
+                throw new Error(`Bus ${busId} is not pending in the Charging database for ${depotId}`);
             }
 
             data[busId].chargeApproved = true;
             data[busId].chargedAt = new Date().toISOString();
             data[busId].operator = operator;
             saveDB(DB_KEYS.CHARGING, data);
+            syncMultiDepotBus(busId, { charge: true, chargedAt: data[busId].chargedAt },
+                `Bus ${busId} charging approved`);
 
             // Check if Cleaner has also approved -> if so, bus enters Scheduler
             SchedulerDB.checkAndEnroll(busId);
@@ -308,8 +387,53 @@
     };
 
     // =========================================================================
-    // 4. Scheduler Database
+    // 4. Scheduler Database & Route-Based Automatic Assignment Engine
     // =========================================================================
+
+    // Default pool of drivers with Senior qualification
+    const DEFAULT_SENIOR_DRIVERS = new Set([
+        'Ramesh Gowda', 'Suresh Kumar', 'Manjunath B', 'Shivakumar N',
+        'Venkatesh R', 'Anand Patil', 'Basavaraj M', 'Raghavendra K',
+        'Chandrashekar H', 'Nagaraj V', 'Someshwara Reddy', 'Pradeep Rao'
+    ]);
+
+    function parseTimeToMinutes(timeStr) {
+        if (!timeStr || typeof timeStr !== 'string') return 0;
+        const parts = timeStr.trim().split(':').map(Number);
+        return (parts[0] || 0) * 60 + (parts[1] || 0);
+    }
+
+    function schedulesOverlap(sch1, sch2) {
+        if (!sch1 || !sch2) return false;
+        if (sch1.id && sch2.id && sch1.id === sch2.id) return true;
+
+        let start1 = parseTimeToMinutes(sch1.departure || '00:00');
+        let end1 = parseTimeToMinutes(sch1.arrival || '23:59');
+        let start2 = parseTimeToMinutes(sch2.departure || '00:00');
+        let end2 = parseTimeToMinutes(sch2.arrival || '23:59');
+
+        if (end1 <= start1) end1 += 1440;
+        if (end2 <= start2) end2 += 1440;
+
+        return Math.max(start1, start2) < Math.min(end1, end2);
+    }
+
+    function isDriverEligible(driverName, schedule, options = {}) {
+        if (!driverName) return false;
+        const req = (schedule && schedule.driverReq) ? schedule.driverReq : 'Standard';
+        if (req === 'Senior') {
+            const seniorList = options.seniorDrivers || DEFAULT_SENIOR_DRIVERS;
+            if (seniorList instanceof Set) {
+                return seniorList.has(driverName);
+            }
+            if (Array.isArray(seniorList)) {
+                return seniorList.includes(driverName);
+            }
+            return false;
+        }
+        return true;
+    }
+
     const SchedulerDB = {
         name: 'SchedulerDatabase',
         table: 'scheduler_ready_buses',
@@ -336,20 +460,26 @@
             const isCharged = chargingData[busId] && chargingData[busId].chargeApproved;
 
             if (isClean && isCharged) {
-                // Bus is approved by both! Enroll into scheduler database ready pool
                 if (!schedulerData[busId]) {
                     const entryData = EntryRecorderDB.init();
-                    const busInfo = entryData[busId] || cleanerData[busId];
+                    const busInfo = entryData[busId] || cleanerData[busId] || {};
+                    const baseBus = getBaseFleet().find(b => (b.id || b.busId) === busId) || {};
+                    const multi = getMultiDepotState();
+                    const centralBus = multi && Array.isArray(multi.buses) ? multi.buses.find(b => (b.id || b.busId) === busId) : null;
+                    const depotId = busInfo.depotId || centralBus?.loc || centralBus?.entryDepot || baseBus.depotId || 'chandapura';
+                    const depotName = (multi?.depots || []).find(d => d.id === depotId)?.name || baseBus.depot || (depotId === 'chandapura' ? 'Depot 44 (Chandapura)' : depotId);
                     schedulerData[busId] = {
                         busId: busId,
-                        regNo: busInfo.regNo,
-                        cat: busInfo.cat,
-                        actualRange: busInfo.actualRange,
-                        driver: busInfo.driver || null,
+                        regNo: busInfo.regNo || baseBus.regNo || baseBus.reg || 'N/A',
+                        cat: busInfo.cat || baseBus.cat || 'B',
+                        actualRange: Number(busInfo.actualRange || baseBus.actualRange || 85.0),
+                        driver: busInfo.driver || baseBus.driver || null,
                         enrolledAt: new Date().toISOString(),
                         scheduleAssigned: null,
                         assignedDriver: null,
-                        assignedAt: null
+                        assignedAt: null,
+                        depot: depotName,
+                        depotId
                     };
                     saveDB(DB_KEYS.SCHEDULER, schedulerData);
                 }
@@ -360,9 +490,18 @@
             return Object.values(this.init());
         },
 
-        // Buses ready in pool (clean + charged + unassigned)
-        getReadyPool() {
-            // Also run a sweep to ensure any already double-approved buses are enrolled
+        /**
+         * Retrieve ready pool with full cross-depot awareness.
+         * A bus is available at targetDepotId if:
+         * 1. Associated with targetDepotId (via linkedDepots or current depot entry)
+         * 2. Not entered at another depot
+         * 3. Not in transit to another depot
+         * 4. Not in maintenance and no defect hold
+         * Crucially: A bus is NOT excluded solely because its primary depot differs from targetDepotId.
+         */
+        getReadyPool(targetDepotId = 'Depot 44 (Chandapura)', options = {}) {
+            const targetDepotKey = targetDepotId === 'Depot 44 (Chandapura)' ? 'chandapura' : targetDepotId;
+            // Sweep local approvals
             const cleanerData = CleanerDB.init();
             const chargingData = ChargingDB.init();
             Object.keys(cleanerData).forEach(busId => {
@@ -371,22 +510,328 @@
                 }
             });
 
-            return this.getAll().filter(b => !b.scheduleAssigned);
+            // Inspect central multi-depot state sfos_multi_v2 if available
+            const multiState = getMultiDepotState();
+            if (multiState && Array.isArray(multiState.buses)) {
+                const schedData = this.init();
+                multiState.buses.forEach(mb => {
+                    const id = mb.id || mb.busId;
+                    const linked = Array.isArray(mb.linkedDepots) ? mb.linkedDepots : [mb.depotId || mb.depot || targetDepotKey];
+                    const isLinked = linked.includes(targetDepotKey) || linked.includes(targetDepotId);
+                    const depotAliases = new Set([targetDepotKey, targetDepotId]);
+                    const enteredHere = mb.entry && [...depotAliases].some(key => mb.entry[key]?.approved);
+                    const enteredElsewhere = mb.loc && !depotAliases.has(mb.loc) && mb.entry && mb.entry[mb.loc]?.approved;
+                    const inTransitElsewhere = mb.transferTo && !depotAliases.has(mb.transferTo);
+                    const isMaint = mb.maintenance === true;
+
+                    if ((isLinked || enteredHere) && !enteredElsewhere && !inTransitElsewhere && !isMaint) {
+                        if (!schedData[id]) {
+                            const baseBus = (options.fleet || getBaseFleet()).find(b => (b.id || b.busId) === id) || {};
+                            schedData[id] = {
+                                busId: id,
+                                regNo: mb.reg || baseBus.regNo || baseBus.reg || 'N/A',
+                                cat: mb.cat || baseBus.cat || 'B',
+                                actualRange: Number(mb.actualRange || baseBus.actualRange || 90.0),
+                                driver: mb.driver || baseBus.driver || null,
+                                enrolledAt: new Date().toISOString(),
+                                scheduleAssigned: mb.assignedSchedule || null,
+                                assignedDriver: mb.assignedDriver || null,
+                                assignedAt: null,
+                                depot: mb.depotId || mb.depot || baseBus.depotId || baseBus.depot || targetDepotKey,
+                                depotId: mb.depotId || mb.loc || mb.home || targetDepotKey
+                            };
+                            saveDB(DB_KEYS.SCHEDULER, schedData);
+                        }
+                    }
+                });
+            }
+
+            // Exclude buses with defect hold, maintenance, or already assigned
+            const baseFleet = options.fleet || getBaseFleet();
+            const pool = this.getAll().filter(b => {
+                const recordDepot = b.depotId || (b.depot === 'Depot 44 (Chandapura)' ? 'chandapura' : null);
+                const sameDepot = recordDepot ? recordDepot === targetDepotKey || recordDepot === targetDepotId : targetDepotKey === 'chandapura';
+                if (!sameDepot || b.scheduleAssigned) return false;
+                const baseInfo = baseFleet.find(bf => (bf.id || bf.busId) === b.busId);
+                if (baseInfo) {
+                    if (baseInfo.maintenance === true) return false;
+                    if (baseInfo.hasDefectHold === true) return false;
+                }
+                return true;
+            });
+
+            return pool;
         },
 
-        assignBus(busId, scheduleId, driverName) {
+        /**
+         * Recommends a suitable and available bus & driver for a given schedule.
+         */
+        recommendAssignment(scheduleId, options = {}) {
+            const targetDepot = options.depotId || 'Depot 44 (Chandapura)';
+            const schedulesList = options.schedules || (typeof SCHEDULES !== 'undefined' ? SCHEDULES : (rootScope.SCHEDULES || []));
+            const fleetList = options.fleet || getBaseFleet();
+            const routesList = options.routes || (typeof ROUTES !== 'undefined' ? ROUTES : (rootScope.ROUTES || []));
+
+            if (!scheduleId) {
+                return {
+                    success: false,
+                    errorType: 'INVALID_SCHEDULE',
+                    reason: 'No schedule ID provided.'
+                };
+            }
+
+            const schedule = schedulesList.find(s => s.id === scheduleId);
+            if (!schedule) {
+                return {
+                    success: false,
+                    errorType: 'INVALID_SCHEDULE',
+                    reason: `Schedule "${scheduleId}" not found in system schedules.`
+                };
+            }
+
+            // Determine allowed categories for schedule
+            let activeCats = Array.isArray(schedule.allowedCats) && schedule.allowedCats.length > 0 ? schedule.allowedCats : null;
+            if (!activeCats) {
+                const routeInfo = routesList.find(r => r.id === schedule.route);
+                const routeDiff = routeInfo ? routeInfo.category : (schedule.category || 'Moderate');
+                const [h, m] = (schedule.departure || "00:00").split(':').map(Number);
+                const mins = (h || 0) * 60 + (m || 0);
+
+                let ts = 'Peak';
+                if (mins < 420) ts = 'Normal';
+                else if (mins >= 420 && mins < 600) ts = 'Extreme Peak';
+                else if (mins >= 960 && mins < 1200) ts = 'Extreme Peak';
+
+                if (routeDiff === 'Complex') activeCats = ['A'];
+                else if (routeDiff === 'Simple' && ts === 'Normal') activeCats = ['A', 'B', 'C'];
+                else activeCats = ['A', 'B'];
+            }
+
+            // Retrieve ready pool
+            const pool = this.getReadyPool(targetDepot, options);
+
+            // Fetch current assignments to detect overlapping trips
+            const currentAssignments = this.getAssignments();
+            const scheduleMap = new Map();
+            schedulesList.forEach(s => scheduleMap.set(s.id, s));
+
+            const singleChargeReq = Number(schedule.singleChargeReq) || 0;
+            const validBuses = pool.filter(bus => {
+                // Category match
+                if (!activeCats.includes(bus.cat)) return false;
+                // Range match
+                if (Number(bus.actualRange) < singleChargeReq) return false;
+                // Trip overlap check for this bus
+                const busAssignments = currentAssignments.filter(a => a.busId === bus.busId);
+                for (const asgn of busAssignments) {
+                    const assignedSch = scheduleMap.get(asgn.scheduleAssigned);
+                    if (assignedSch && schedulesOverlap(assignedSch, schedule)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (validBuses.length === 0) {
+                return {
+                    success: false,
+                    errorType: 'NO_BUS',
+                    schedule,
+                    allowedCats: activeCats,
+                    singleChargeReq,
+                    reason: `No suitable and available bus found for Schedule ${scheduleId} (Route ${schedule.route}). Requires Category in [${activeCats.join(', ')}], range >= ${singleChargeReq} km, operational ready status, and no trip time overlap.`
+                };
+            }
+
+            // Selection strategy for buses:
+            // 1. Category rank (Category preservation: prefer Cat C first, then B, preserve A: C=1, B=2, A=3)
+            // 2. Smallest positive battery range buffer (bus.actualRange - singleChargeReq)
+            // 3. Bus ID tie-breaker
+            validBuses.sort((a, b) => {
+                const rank = { 'C': 1, 'B': 2, 'A': 3 };
+                const rankDiff = (rank[a.cat] || 2) - (rank[b.cat] || 2);
+                if (rankDiff !== 0) return rankDiff;
+
+                const bufA = a.actualRange - singleChargeReq;
+                const bufB = b.actualRange - singleChargeReq;
+                if (Math.abs(bufA - bufB) > 0.001) return bufA - bufB;
+
+                return String(a.busId).localeCompare(String(b.busId));
+            });
+
+            const bestBus = validBuses[0];
+
+            // Identify eligible drivers
+            const allDriversSet = new Set();
+            fleetList.forEach(b => { if (b.driver) allDriversSet.add(b.driver); });
+            if (options.drivers && Array.isArray(options.drivers)) {
+                options.drivers.forEach(d => { if (d) allDriversSet.add(typeof d === 'string' ? d : d.driver_name || d.name); });
+            }
+            if (bestBus.driver) allDriversSet.add(bestBus.driver);
+
+            const allDrivers = Array.from(allDriversSet).sort();
+
+            const eligibleDrivers = allDrivers.filter(driverName => {
+                // Qualification check
+                if (!isDriverEligible(driverName, schedule, options)) {
+                    return false;
+                }
+                // Schedule time overlap check
+                const driverAssignments = currentAssignments.filter(a => a.assignedDriver === driverName);
+                for (const asgn of driverAssignments) {
+                    const assignedSch = scheduleMap.get(asgn.scheduleAssigned);
+                    if (assignedSch && schedulesOverlap(assignedSch, schedule)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (eligibleDrivers.length === 0) {
+                return {
+                    success: false,
+                    errorType: 'NO_DRIVER',
+                    bus: bestBus,
+                    schedule,
+                    reason: `No eligible driver available for Schedule ${scheduleId}. Route requires ${schedule.driverReq || 'Standard'} qualification and no trip schedule conflicts.`
+                };
+            }
+
+            // Selection strategy for driver:
+            // 1. If bestBus has a default driver and that driver is eligible, preserve that pairing!
+            // 2. Else pick first eligible driver from sorted list
+            let bestDriver = null;
+            if (bestBus.driver && eligibleDrivers.includes(bestBus.driver)) {
+                bestDriver = bestBus.driver;
+            } else {
+                bestDriver = eligibleDrivers[0];
+            }
+
+            const bufferKm = Number((bestBus.actualRange - singleChargeReq).toFixed(1));
+
+            return {
+                success: true,
+                status: 'PROPOSED',
+                schedule,
+                bus: bestBus,
+                driver: bestDriver,
+                bufferKm,
+                reason: `Recommended Bus ${bestBus.busId} (${bestBus.regNo}, Cat ${bestBus.cat}) with +${bufferKm} km safety buffer and Driver ${bestDriver} (${schedule.driverReq || 'Standard'} qualified).`
+            };
+        },
+
+        assignBus(busId, scheduleId, driverName, options = {}) {
             const data = this.init();
             if (!data[busId]) {
                 throw new Error(`Bus ${busId} is not in the Scheduler Ready Pool`);
             }
+            if (options.depotId && data[busId].depotId && data[busId].depotId !== options.depotId) {
+                throw new Error(`Depot access error: Bus ${busId} is assigned to depot ${data[busId].depotId}`);
+            }
 
+            const schedulesList = options.schedules || (typeof SCHEDULES !== 'undefined' ? SCHEDULES : (rootScope.SCHEDULES || []));
+            const scheduleMap = new Map();
+            schedulesList.forEach(s => scheduleMap.set(s.id, s));
+            const targetSchedule = scheduleMap.get(scheduleId);
+
+            // Re-validate atomic concurrency:
+            // 1. Bus must not be already assigned to an overlapping active schedule
+            if (data[busId].scheduleAssigned) {
+                const existingSch = scheduleMap.get(data[busId].scheduleAssigned);
+                if (!targetSchedule || !existingSch || schedulesOverlap(existingSch, targetSchedule) || data[busId].scheduleAssigned === scheduleId) {
+                    throw new Error(`Concurrency Conflict: Bus ${busId} is already assigned to schedule ${data[busId].scheduleAssigned}`);
+                }
+            }
+
+            // 2. Driver must not be already committed to an overlapping active schedule
+            const currentAssignments = Object.values(data).filter(b => b.scheduleAssigned && b.assignedDriver === driverName && b.busId !== busId);
+            for (const asgn of currentAssignments) {
+                const existingSch = scheduleMap.get(asgn.scheduleAssigned);
+                if (!targetSchedule || !existingSch || schedulesOverlap(existingSch, targetSchedule)) {
+                    throw new Error(`Concurrency Conflict: Driver ${driverName} is already committed to an overlapping trip (${asgn.scheduleAssigned})`);
+                }
+            }
+
+            // 3. Re-validate driver qualification
+            if (targetSchedule && !isDriverEligible(driverName, targetSchedule, options)) {
+                throw new Error(`Qualification Error: Route requires a Senior qualified driver, but ${driverName} is not eligible`);
+            }
+
+            // 4. Re-validate bus range & operational status
+            const baseFleet = options.fleet || getBaseFleet();
+            const baseBus = baseFleet.find(b => (b.id || b.busId) === busId);
+            if (baseBus && (baseBus.maintenance === true || baseBus.hasDefectHold === true)) {
+                throw new Error(`Operational Error: Bus ${busId} is currently under maintenance or defect hold`);
+            }
+            if (targetSchedule && Number(data[busId].actualRange) < Number(targetSchedule.singleChargeReq || 0)) {
+                throw new Error(`Range Error: Bus ${busId} actual range (${data[busId].actualRange} km) is below required ${targetSchedule.singleChargeReq} km`);
+            }
+
+            // Commit assignment atomically
             data[busId].scheduleAssigned = scheduleId;
             data[busId].assignedDriver = driverName;
             data[busId].assignedAt = new Date().toISOString();
             saveDB(DB_KEYS.SCHEDULER, data);
 
-            window.dispatchEvent(new CustomEvent('fleet-db-updated', { detail: { stage: 'scheduler', busId, scheduleId } }));
+            // Sync with sfos_multi_v2 central state if present
+            try {
+                const multi = getMultiDepotState();
+                if (multi && Array.isArray(multi.buses)) {
+                    const mb = multi.buses.find(b => (b.id || b.busId) === busId);
+                    if (mb) {
+                        mb.assignedSchedule = scheduleId;
+                        mb.assignedDriver = driverName;
+                        mb.route = scheduleId;
+                        mb.driver = driverName;
+                        const depotId = mb.loc || mb.entryDepot || mb.home;
+                        if (Array.isArray(multi.log)) {
+                            multi.log.unshift({ t: new Date().toLocaleTimeString('en-GB'),
+                                m: `Bus ${busId} assigned to ${scheduleId} with ${driverName}`,
+                                d: depotId ? [depotId] : [] });
+                            multi.log = multi.log.slice(0, 300);
+                        }
+                        saveMultiDepotState(multi);
+                    }
+                }
+            } catch (e) {}
+
+            dispatchFleetEvent('scheduler', { busId, scheduleId, driverName });
             return data[busId];
+        },
+
+        unassignBus(busId) {
+            const data = this.init();
+            if (!data[busId]) return false;
+
+            const prevSchedule = data[busId].scheduleAssigned;
+            data[busId].scheduleAssigned = null;
+            data[busId].assignedDriver = null;
+            data[busId].assignedAt = null;
+            saveDB(DB_KEYS.SCHEDULER, data);
+
+            try {
+                const multi = getMultiDepotState();
+                if (multi && Array.isArray(multi.buses)) {
+                    const mb = multi.buses.find(b => (b.id || b.busId) === busId);
+                    if (mb) {
+                        mb.assignedSchedule = null;
+                        mb.assignedDriver = null;
+                        mb.route = '';
+                        mb.driver = '';
+                        const depotId = mb.loc || mb.entryDepot || mb.home;
+                        if (Array.isArray(multi.log)) {
+                            multi.log.unshift({ t: new Date().toLocaleTimeString('en-GB'),
+                                m: `Bus ${busId} unassigned from ${prevSchedule || 'schedule'}`,
+                                d: depotId ? [depotId] : [] });
+                            multi.log = multi.log.slice(0, 300);
+                        }
+                        saveMultiDepotState(multi);
+                    }
+                }
+            } catch (e) {}
+
+            dispatchFleetEvent('unassigned', { busId, prevSchedule });
+            return true;
         },
 
         getAssignments() {
@@ -398,14 +843,9 @@
          * This completes the workflow cycle
          */
         returnToDepot(busId) {
-            // Remove from Scheduler database
-            const schedulerData = this.init();
-            if (schedulerData[busId]) {
-                delete schedulerData[busId];
-                saveDB(DB_KEYS.SCHEDULER, schedulerData);
-            }
+            this.unassignBus(busId);
 
-            // Reset Entry Recorder database (so bus can go through workflow again)
+            // Reset Entry Recorder database
             const entryData = EntryRecorderDB.init();
             if (entryData[busId]) {
                 entryData[busId].entryApproved = false;
@@ -432,9 +872,27 @@
                 saveDB(DB_KEYS.CHARGING, chargingData);
             }
 
-            // Dispatch event for reactive UI updates
-            window.dispatchEvent(new CustomEvent('fleet-db-updated', { detail: { stage: 'returned_to_depot', busId } }));
+            const multi = getMultiDepotState();
+            const centralBus = multi && Array.isArray(multi.buses)
+                ? multi.buses.find(item => (item.id || item.busId) === busId)
+                : null;
+            if (centralBus) {
+                const returnDepot = centralBus.loc || centralBus.entryDepot || centralBus.home || null;
+                syncMultiDepotBus(busId, {
+                    loc: returnDepot,
+                    entry: false,
+                    clean: false,
+                    charge: false,
+                    route: '',
+                    driver: '',
+                    entryDepot: null,
+                    entryAt: null,
+                    assignedSchedule: null,
+                    assignedDriver: null
+                }, `Bus ${busId} returned to depot and reset for next cycle`);
+            }
 
+            dispatchFleetEvent('returned_to_depot', { busId });
             return true;
         }
     };
@@ -467,28 +925,41 @@
 
     // Reset all databases back to factory depot state
     function resetAllDatabases() {
-        localStorage.removeItem(DB_KEYS.ENTRY_RECORDER);
-        localStorage.removeItem(DB_KEYS.CLEANER);
-        localStorage.removeItem(DB_KEYS.CHARGING);
-        localStorage.removeItem(DB_KEYS.SCHEDULER);
+        const store = getStorage();
+        store.removeItem(DB_KEYS.ENTRY_RECORDER);
+        store.removeItem(DB_KEYS.CLEANER);
+        store.removeItem(DB_KEYS.CHARGING);
+        store.removeItem(DB_KEYS.SCHEDULER);
         initAllDatabases();
     }
 
-    // Expose to window
-    window.FleetDB = {
+    // Expose to rootScope
+    rootScope.FleetDB = {
         EntryRecorder: EntryRecorderDB,
         Cleaner: CleanerDB,
         Charging: ChargingDB,
         Scheduler: SchedulerDB,
         initAll: initAllDatabases,
-        resetAll: resetAllDatabases
+        resetAll: resetAllDatabases,
+        isTimeOverlapping: schedulesOverlap,
+        isDriverEligible: isDriverEligible,
+        parseTimeToMinutes: parseTimeToMinutes,
+        DEFAULT_SENIOR_DRIVERS: DEFAULT_SENIOR_DRIVERS
     };
 
     // Auto-initialize on load
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initAllDatabases);
+    if (typeof document !== 'undefined' && document) {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initAllDatabases);
+        } else {
+            initAllDatabases();
+        }
     } else {
         initAllDatabases();
     }
 
-})(window);
+})(typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : this));
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = (typeof window !== 'undefined' ? window.FleetDB : (typeof global !== 'undefined' ? global.FleetDB : {}));
+}

@@ -40,17 +40,28 @@ CREATE TABLE IF NOT EXISTS scheduler (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   bus_id TEXT NOT NULL,
   route_id TEXT NOT NULL,
+  schedule_id TEXT,
+  driver_name TEXT,
+  depot TEXT DEFAULT "Depot 44 (Chandapura)",
   assigned_by TEXT,
   assignment_time DATETIME DEFAULT CURRENT_TIMESTAMP,
   status TEXT DEFAULT "Assigned",
   FOREIGN KEY (bus_id) REFERENCES entry_checker(bus_id)
 );
 
+-- Table for registered drivers and qualifications
+CREATE TABLE IF NOT EXISTS drivers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  driver_name TEXT UNIQUE NOT NULL,
+  qualification TEXT DEFAULT 'Standard', -- 'Standard' or 'Senior'
+  depot TEXT DEFAULT 'Depot 44 (Chandapura)',
+  status TEXT DEFAULT 'Active'
+);
+
 -- Insert actual buses from FLEET data as potential depot entries
 INSERT OR IGNORE INTO entry_checker (bus_id, reg_no, status, checked_by)
-SELECT 
-SELECT 'BM221', 'KA51AH8184', 'In Maintenance', 'System'UNION ALL
-SELECT 'BM304', 'KA51AJ0137', 'Ready in Depot', 'System'UNION ALL
+SELECT 'BM221', 'KA51AH8184', 'In Maintenance', 'System' UNION ALL
+SELECT 'BM304', 'KA51AJ0137', 'Ready in Depot', 'System' UNION ALL
 SELECT 'BM088', 'KA51AH3127', 'Charging (Bay 3)', 'System'UNION ALL
 SELECT 'BM057', 'KA51AH2956', 'Ready in Depot', 'System'UNION ALL
 SELECT 'BM224', 'KA51AH8185', 'Needs Fast Charge', 'System'UNION ALL

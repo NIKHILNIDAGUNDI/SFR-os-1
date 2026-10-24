@@ -1,0 +1,21 @@
+{
+  "name": "smart-fleet-os",
+  "version": "1.0.0",
+  "description": "Smart Depot Dispatch & Fleet Routing OS for Electric Bus Fleets",
+  "main": "index.html",
+  "scripts": {
+    "test": "node test_cross_depot_sync.js && node test_auto_assignment.js",
+    "test:sync": "node test_cross_depot_sync.js",
+    "test:assignment": "node test_auto_assignment.js"
+  },
+  "keywords": [
+    "smart-fleet",
+    "transit",
+    "dispatch",
+    "ev",
+    "electric-bus",
+    "depot-management"
+  ],
+  "author": "Switch Mobility / City Transit Operations",
+  "license": "ISC"
+}

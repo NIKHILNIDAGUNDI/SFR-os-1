@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Smart Fleet OS – Multi-Depot Console</title>
+<title>Smart Fleet OS – Admin Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚌</text></svg>">
 <style>
-:root{--bg:#f6f4ef;--card:#fff;--ink:#37474f;--mut:#78909c;--line:#3b8ea5;--btn:#e5b59c;--btnh:#d9976f;--slate:#687489;--ok:#3a9068;--warn:#d99a1e;--blue:#2f6fd0;--p1:#e6f0fb;--p2:#e8f5e9;--p4:#fff8dc;--bad:#c0583a;--land:#e9efe6;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b2127;--card:#252d35;--ink:#e3e9ee;--mut:#9aa7b2;--line:#4aa3ba;--btn:#b9795a;--btnh:#cf8c6a;--slate:#56637a;--ok:#5cc596;--warn:#f0b84a;--blue:#6ea3f2;--p1:#1f3248;--p2:#1f3a2a;--p4:#3d3418;--bad:#e5896c;--land:#2c363e}}
-:root[data-theme="dark"]{--bg:#1b2127;--card:#252d35;--ink:#e3e9ee;--mut:#9aa7b2;--line:#4aa3ba;--btn:#b9795a;--btnh:#cf8c6a;--slate:#56637a;--ok:#5cc596;--warn:#f0b84a;--blue:#6ea3f2;--p1:#1f3248;--p2:#1f3a2a;--p4:#3d3418;--bad:#e5896c;--land:#2c363e}
+:root{--bg:#F7F5F0;--card:#FFFFFF;--ink:#34454C;--mut:#7B8688;--line:#0093A5;--btn:#D96629;--btnh:#bd5324;--slate:#687489;--ok:#059669;--warn:#F9A825;--blue:#1976D2;--p1:#E3F2FD;--p2:#E8F5E9;--p4:#FFFDE7;--bad:#DC2626;--land:#E8ECE7;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111314;--card:#1E272B;--ink:#F0F2F2;--mut:#A2B0AD;--line:#2DB7C9;--btn:#E57338;--btnh:#d7652d;--slate:#56637a;--ok:#81C784;--warn:#FFE082;--blue:#90CAF9;--p1:rgba(25,118,210,.2);--p2:rgba(56,142,60,.2);--p4:rgba(249,168,37,.2);--bad:#EF7777;--land:#263238}}
+:root[data-theme="dark"]{--bg:#111314;--card:#1E272B;--ink:#F0F2F2;--mut:#A2B0AD;--line:#2DB7C9;--btn:#E57338;--btnh:#d7652d;--slate:#56637a;--ok:#81C784;--warn:#FFE082;--blue:#90CAF9;--p1:rgba(25,118,210,.2);--p2:rgba(56,142,60,.2);--p4:rgba(249,168,37,.2);--bad:#EF7777;--land:#263238}
 *{box-sizing:border-box}html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh}
 .wrap{max-width:1150px;margin:0 auto;padding:16px}
@@ -14,14 +17,12 @@ body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-sy
 .layout{display:flex;align-items:flex-start;gap:20px}
 .sidebar{width:220px;flex:0 0 220px;display:flex;flex-direction:column;gap:12px;background:var(--card);border-radius:14px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
 .sidebar .pill{display:block;text-align:center}
-.side-nav{display:grid;gap:6px}
+.side-nav{display:grid;gap:6px}.logout-item{margin-top:8px;color:var(--bad);text-align:center}
 .nav-item{width:100%;text-align:left;border:0;border-radius:8px;background:transparent;padding:10px 12px;cursor:pointer;font-weight:600;color:var(--mut)}
 .nav-item:hover{background:var(--bg)}
 .nav-item.on{background:var(--line);color:#fff}
 .scanned-bus td{background:color-mix(in srgb,var(--ok) 14%,var(--card))}
 .scanned-bus td:first-child{box-shadow:inset 4px 0 var(--ok)}
-.sidebar-actions{display:grid;gap:8px;margin-top:8px}
-.sidebar-actions button{width:100%}
 .main-content{flex:1;min-width:0}
 .pill{padding:8px 16px;border-radius:99px;font-weight:700;font-size:14px;background:var(--p1);color:var(--blue)}
 button,select,input,textarea{font:inherit;color:var(--ink)}
@@ -63,18 +64,18 @@ th{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em
 .f textarea{min-height:110px;resize:vertical}.hint{font-size:12px;color:var(--mut);font-weight:400}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.chip{background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:13px}.chip a{cursor:pointer;color:var(--bad);margin-left:6px}
 .map{width:100%;max-width:460px;margin:0 auto;display:block}.mapbox{display:grid;grid-template-columns:minmax(260px,460px) 1fr;gap:18px;align-items:center}
-@media(max-width:760px){.mapbox{grid-template-columns:1fr}.layout{display:block}.sidebar{width:auto;margin-bottom:16px}.side-nav{display:flex;overflow-x:auto}.nav-item{width:auto;flex:0 0 auto;white-space:nowrap}.sidebar-actions{display:flex}.sidebar-actions button{width:auto;flex:1}}
+@media(max-width:760px){.mapbox{grid-template-columns:1fr}.layout{display:block}.sidebar{width:auto;margin-bottom:16px}.side-nav{display:flex;overflow-x:auto}.nav-item{width:auto;flex:0 0 auto;white-space:nowrap}}
 code{background:var(--bg);padding:2px 6px;border-radius:6px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--slate);color:#fff;padding:10px 18px;border-radius:10px;opacity:0;transition:.25s;pointer-events:none;z-index:9;max-width:90vw;text-align:center}
 #toast.on{opacity:1}
-</style></head>
+.registry-filters{display:grid;grid-template-columns:minmax(220px,2fr) repeat(3,minmax(130px,1fr));gap:9px;margin:12px 0}.registry-filters input,.registry-filters select{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);min-width:0}.tag.cat-a{background:var(--p1);color:var(--blue)}.tag.cat-b{background:var(--p2);color:#388E3C}.tag.cat-c{background:var(--p4);color:var(--warn)}.metric-note{font-size:11px;color:var(--mut)}@media(max-width:900px){.registry-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.registry-filters{grid-template-columns:1fr}}</style></head>
 <body><div class="wrap" id="app"></div><div id="scannerLayer"></div><div id="toast"></div>
 <script>
 const CITIES=[["Bengaluru",12.97,77.59,"KA"],["Chennai",13.08,80.27,"TN"],["Hyderabad",17.38,78.48,"TS"],["Mumbai",19.08,72.88,"MH"],["Pune",18.52,73.86,"MH"],["Delhi",28.61,77.21,"DL"],["Kolkata",22.57,88.36,"WB"],["Kochi",9.93,76.27,"KL"],["Ahmedabad",23.02,72.57,"GJ"],["Jaipur",26.91,75.79,"RJ"],["Other (enter lat / lon)",0,0,"XX"]];
 const ROLES=[["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging Incharge"],["sched","Scheduler"],["mgr","Depot Manager"]];
 const OUTLINE=[[74.5,37],[77,35.5],[79,34],[78.5,31],[81,30],[80,28.5],[84,27.5],[88,27],[88.5,26.5],[92,27],[95,28.5],[97,28],[96,26],[94,24],[93,22],[92.5,23],[91.5,24],[89,22],[87,21],[85,19.5],[82.5,17],[80.2,15.5],[80.3,13],[79.8,10.5],[78,8.5],[77.5,8],[76.5,9],[75,12],[74,15],[73,17.5],[72.8,20],[72.5,21.5],[70,21],[69,22.5],[70.5,23],[68.2,23.7],[70,25],[71,27],[74,31],[74.5,34]];
 const KEY="sfos_multi_v2";
-let S,auth=null,scanStream=null,scanWorker=null,ocrPromise=null,ui={tab:"net",depot:"",q:"",f:"pending",xf:"",selectedBus:""};
+let S,auth={role:"admin"},scanStream=null,scanWorker=null,ocrPromise=null,ui={tab:"net",depot:"",q:"",f:"pending",xf:"",selectedBus:"",registryQ:"",registryCat:"all",registryDepot:"all",registryStatus:"all"};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cid=s=>String(s).replace(/[^A-Za-z0-9_-]/g,"");
@@ -175,6 +176,7 @@ function load(){
     }
   }catch(e){}
   seed();
+  save();
 }
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 function logm(m,...ds){S.log.unshift({t:new Date().toLocaleString(),m,d:ds});S.log=S.log.slice(0,300)}
@@ -193,7 +195,6 @@ function stats(d){
   return c;
 }
 const curD=()=>auth.role==="admin"?(dep(ui.depot)?ui.depot:(S.depots[0]||{}).id):auth.depot;
-const can=t=>auth.role==="admin"||auth.role==="mgr"||auth.role===t;
 
 /* ---------- actions ---------- */
 function act(id,type){
@@ -254,27 +255,9 @@ function act(id,type){
   if((type==="clean"||type==="charge")&&stage(b)==="ready")logm(id+" moved to Scheduler ready pool",d);
   save();render();
 }
-function bulk(kind){
-  load();
-  const d=curD();
-  const rows=rowsFor(kind).filter(b=>kind==="entry"?!b.entry:!b[kind]);
-  if(!rows.length)return toast("Nothing pending");
-  if(kind==="entry"){
-    let count=0;
-    rows.forEach(b=>{
-      if(!b.entry&&(!b.transferTo||b.transferTo===d)&&!b.maintenance){
-        b.entry=true;b.loc=d;b.entryDepot=d;b.entryAt=new Date().toISOString();
-        b.transferTo=null;b.transferFrom=null;b.transferStatus=null;
-        count++;
-      }
-    });
-    logm("Bulk approved "+count+" buses at Entry Recorder ("+dn(d)+")",d);
-    save();render();toast(count+" buses approved for entry");return;
-  }
-  rows.forEach(b=>b[kind]=true);
-  logm("Bulk approved "+rows.length+" buses at "+ROLES.find(r=>r[0]===kind)[1],d);
-  save();render();toast(rows.length+" approved");
-}
+function recordEntry(busId,depotId=curD()){ui.depot=depotId;return act(busId,"entry")}
+function departBus(busId,destinationId){return tx(busId,destinationId)}
+function confirmArrival(busId,depotId=curD()){const bus=S.buses.find(b=>b.id===busId);if(!bus||bus.transferTo!==depotId)return toast("Arrival is only available at the assigned destination depot");ui.depot=depotId;return act(busId,"entry")}
 function tx(id,to){
   load();
   const b=S.buses.find(x=>x.id===id);if(!b||!to||!dep(to))return toast("Choose a destination depot");
@@ -410,13 +393,6 @@ function rowsFor(tab){
   if(tab==="sched")r=r.filter(b=>["ready","assigned"].includes(stage(b))).filter(f(b=>!!b.route));
   return r;
 }
-function toolbar(tab,bulkBtn){
-  const e=can(tab);
-  return `<div class="tools"><input id="q" placeholder="Search bus code or registration (e.g., BM221, KA51AH8184)…" value="${esc(ui.q)}" oninput="ui.selectedBus='';ui.q=this.value;partial()">
-  <select onchange="ui.selectedBus='';ui.f=this.value;render()"><option value="pending"${ui.f==="pending"?" selected":""}>Pending</option><option value="done"${ui.f==="done"?" selected":""}>${tab==="sched"?"Assigned":"Approved"}</option><option value="all"${ui.f==="all"?" selected":""}>All</option></select>
-  ${["entry","clean","charge"].includes(tab)?'<button class="btn s" onclick="openScanner()">Scan number plate</button>':""}
-  ${bulkBtn&&e?`<button class="btn" onclick="bulk('${tab}')">Approve all pending</button>`:""}</div>`;
-}
 function scannerStatus(message){
   const status=$("scanStatus");
   if(status)status.textContent=message;
@@ -545,28 +521,6 @@ function homeTag(b){
   if(b.transferTo&&b.transferStatus==="in_transit")t+=" "+tag("In Transit → "+esc(dn(b.transferTo)),"w");
   return t;
 }
-function dbView(tab){
-  const d=dep(curD()),rows=rowsFor(tab),m=META[tab],e=can(tab);
-  const body=rows.map(b=>{
-    const ok=tab==="entry"?b.entry:b[tab],st=SN[stage(b)];
-    const other=tab==="entry"?"":`<td>${tab==="clean"?(b.charge?tag("Charging done","ok"):tag("Charging pending","w")):(b.clean?tag("Cleaning done","ok"):tag("Cleaning pending","w"))}</td>`;
-    return `<tr${ui.selectedBus===b.id?' class="scanned-bus" id="bus-'+esc(b.id)+'"':""}><td><b>${b.id}</b>${homeTag(b)}</td><td>${b.reg}</td><td>${ok?tag("Approved","ok"):tag(tab==="entry"?"Not approved":"Pending","w")}</td>${other}<td>${tag(st[0],st[1])}</td>
-    ${e?`<td>${ok?`<button class="btn sm out" onclick="act('${b.id}','un${tab}')">Revert</button>`:`<button class="btn sm" onclick="act('${b.id}','${tab}')">Approve</button>`}</td>`:""}</tr>`}).join("");
-  return `<div class="card"><h2>${m[0]}</h2><p class="sub l"><b>${esc(d.name)}</b> · ${esc(d.city)}. ${m[1]}${e?"":" (view only)"}</p>${toolbar(tab,true)}
-  <div class="tw"><table><thead><tr><th>Bus code</th><th>Registration</th><th>This stage</th>${tab==="entry"?"":"<th>Other stage</th>"}<th>Overall</th>${e?"<th>Action</th>":""}</tr></thead><tbody>${body}</tbody></table>${rows.length?"":'<div class="empty">No buses match this filter.</div>'}</div>
-  <p class="sub l" style="margin-top:10px">${rows.length} bus(es) shown</p></div>`;
-}
-function sched(){
-  const d=dep(curD()),rows=rowsFor("sched"),e=can("sched"),c=stats(d.id),bs=bd(d.id);
-  const uR=bs.map(b=>b.route).filter(Boolean),uD=bs.map(b=>b.driver).filter(Boolean),others=S.depots.filter(x=>x.id!==d.id);
-  const body=rows.map(b=>{
-    if(b.route)return `<tr><td><b>${b.id}</b>${homeTag(b)}</td><td>${b.reg}</td><td>${esc(b.route)}</td><td>${esc(b.driver)}</td><td>${tag("Assigned","b")}</td>${e?`<td><button class="btn sm out" onclick="act('${b.id}','unassign')">Unassign</button></td><td></td>`:""}</tr>`;
-    const ro=d.routes.filter(r=>!uR.includes(r)).map(r=>`<option>${esc(r)}</option>`).join(""),dr=d.drivers.filter(x=>!uD.includes(x)).map(x=>`<option>${esc(x)}</option>`).join("");
-    return `<tr><td><b>${b.id}</b>${homeTag(b)}</td><td>${b.reg}</td><td>${e?`<select class="inl" id="r_${b.id}"><option value="">-- Route --</option>${ro}</select>`:"—"}</td><td>${e?`<select class="inl" id="d_${b.id}"><option value="">-- Driver --</option>${dr}</select>`:"—"}</td><td>${tag("Ready","ok")}</td>
-    ${e?`<td><button class="btn sm" onclick="act('${b.id}','assign')">Finalize</button></td><td>${others.length?`<select class="inl" id="x_${b.id}"><option value="">Send to depot…</option>${others.map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join("")}</select> <button class="btn sm s" onclick="txRow('${b.id}')">Send</button>`:""}</td>`:""}</tr>`}).join("");
-  return `<div class="card"><h2>Scheduler Console</h2><p class="sub l"><b>${esc(d.name)}</b> · Route &amp; driver assignment. Ready pool: <b>${c.ready}</b> · Schedules free: <b>${d.routes.length-uR.length}</b> · Drivers free: <b>${d.drivers.length-uD.length}</b>${e?"":" (view only)"}</p>${toolbar("sched",false)}
-  <div class="tw"><table><thead><tr><th>Bus code</th><th>Registration</th><th>Route / Schedule</th><th>Driver</th><th>Status</th>${e?"<th>Action</th><th>Transfer to another depot</th>":""}</tr></thead><tbody>${body}</tbody></table>${rows.length?"":'<div class="empty">No buses in this view.</div>'}</div></div>`;
-}
 function kp(c){return `<div class="kpis"><div class="kpi"><b>${c.n}</b><span>Buses at depot</span></div><div class="kpi"><b>${c.entry}</b><span>Awaiting entry</span></div><div class="kpi"><b>${c.clean}</b><span>Pending cleaning</span></div><div class="kpi"><b>${c.charge}</b><span>Pending charging</span></div><div class="kpi"><b>${c.ready}</b><span>Ready pool</span></div><div class="kpi"><b>${c.assigned}</b><span>Assigned</span></div></div>`}
 function depOv(){
   const d=dep(curD()),c=stats(d.id),n=c.n||1,pc=v=>(v/n*100).toFixed(1);
@@ -586,23 +540,12 @@ function busTable(d){
   }).join("")}</tbody></table></div>${r.length?"":'<div class="empty">No buses match.</div>'}<p class="sub l" style="margin-top:10px">${r.length} bus(es)</p>`;
 }
 function logList(d,n){const l=S.log.filter(x=>!d||x.d.includes(d)).slice(0,n);return `<ul class="log">${l.map(x=>`<li>${x.t} — ${esc(x.m)}</li>`).join("")||"<li>No activity yet.</li>"}</ul>`}
-function mapSvg(){
-  const P=(lon,lat)=>[((lon-67)*12.5).toFixed(1),((38-lat)*12.5).toFixed(1)];
-  const path="M"+OUTLINE.map(p=>P(...p).join(",")).join("L")+"Z";
-  const mk=S.depots.map(d=>{const [x,y]=P(d.lon,d.lat),c=stats(d.id),r=6+Math.sqrt(c.n)/1.5,left=d.lon<=79.5;
-    return `<g style="cursor:pointer" onclick="openDepot('${d.id}')"><circle cx="${x}" cy="${y}" r="${r.toFixed(1)}" fill="var(--blue)" fill-opacity=".8" stroke="var(--card)" stroke-width="2"/><text x="${+x+(left?-r-4:r+4)}" y="${+y+4}" text-anchor="${left?"end":"start"}" font-size="11" font-weight="700" fill="var(--ink)">${esc(d.name.split(" ")[0])} · ${c.n}</text></g>`}).join("");
-  return `<svg class="map" viewBox="0 0 400 410" role="img" aria-label="Depot map"><path d="${path}" fill="var(--land)" stroke="var(--line)" stroke-width="1.5" stroke-linejoin="round"/>${mk}</svg>`;
-}
-function openDepot(id){ui.depot=id;go(auth.role==="admin"?"ov":"ov")}
+function openDepot(id){ui.depot=id;go("ov")}
 function net(){
-  const T=S.depots.reduce((a,d)=>{const c=stats(d.id);a.n+=c.n;a.r+=c.ready;a.a+=c.assigned;return a},{n:0,r:0,a:0});
-  const totalFleet=S.buses.length;
-  const presentBuses=S.buses.filter(b=>b.entry).length;
-  const inTransitBuses=S.buses.filter(b=>b.transferStatus==="in_transit").length;
+  const ready=S.depots.reduce((n,d)=>n+stats(d.id).ready,0),inTransit=S.buses.filter(b=>b.transferStatus==="in_transit").length,maintenance=S.buses.filter(b=>b.maintenance).length,capacity=S.depots.reduce((n,d)=>n+S.buses.filter(b=>b.home===d.id).length,0);
   const rows=S.depots.map(d=>{const c=stats(d.id);return `<tr><td><b>${esc(d.name)}</b></td><td>${esc(d.city)}</td><td>${c.n}</td><td>${c.entry}</td><td>${c.processing}</td><td>${c.ready}</td><td>${c.assigned}</td><td><button class="btn sm" onclick="openDepot('${d.id}')">Open</button></td></tr>`}).join("");
-  return `<div class="card"><h2>Network Overview</h2><p class="sub l">All depots and centralized fleet tracking. Click Open to inspect a depot.</p>
-  <div class="kpis"><div class="kpi"><b>${S.depots.length}</b><span>Depots</span></div><div class="kpi"><b>${totalFleet}</b><span>Unique Fleet Buses</span></div><div class="kpi"><b>${presentBuses}</b><span>Buses Present in Depots</span></div><div class="kpi"><b>${inTransitBuses}</b><span>In Transit</span></div></div></div>
-  <div class="card"><div class="tw"><table style="min-width:520px"><thead><tr><th>Depot</th><th>City</th><th>Present</th><th>Entry Pending</th><th>Clean/Chg</th><th>Ready</th><th>Assigned</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
+  return `<div class="card"><div class="top"><div><h2>Fleet overview</h2><p class="sub l">Live network status · synchronized across depot consoles</p></div><span class="pill">${S.depots.length} depots online</span></div><div class="kpis"><div class="kpi"><b>${S.buses.length}</b><span>Active Fleet</span></div><div class="kpi"><b>${ready}</b><span>Ready Pool</span></div><div class="kpi"><b>${inTransit}</b><span>In Transit</span></div><div class="kpi"><b>${maintenance}</b><span>Maintenance Hold</span></div><div class="kpi"><b>${capacity}</b><span>Depot Capacity <small class="metric-note">registered home fleet</small></span></div></div></div>
+  <div class="card"><h2>Depot operations</h2><div class="tw"><table><thead><tr><th>Depot</th><th>City</th><th>Active</th><th>Entry queue</th><th>Processing</th><th>Ready</th><th>Assigned</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
   ${locator()}`;
 }
 function locator(){return `<div class="card"><h3>Bus Locator</h3><p class="sub l">${auth.role==="admin"?"Search buses across all depots.":"Search buses assigned or authorized for your depot."}</p><div class="tools"><input id="lq" placeholder="e.g., BM221, KA51AH8184, KA-25-1234…" value="${esc(ui.xf)}" oninput="ui.xf=this.value;locRes()"></div><div id="locres">${locHtml()}</div></div>`}
@@ -617,6 +560,11 @@ function locHtml(){
   }).join("")}</tbody></table></div>`;
 }
 function locRes(){$("locres").innerHTML=locHtml()}
+function registryStatus(bus){if(bus.transferStatus==="in_transit")return "in_transit";if(bus.maintenance)return "maintenance";if(bus.entry&&stage(bus)==="ready")return "ready";if(bus.entry)return "processing";return "available"}
+function registryRows(){const q=ui.registryQ.trim().toLowerCase(),r=S.buses.filter(b=>{const depotOk=ui.registryDepot==="all"||(b.loc===ui.registryDepot)||(b.home===ui.registryDepot)||(b.linkedDepots||[]).includes(ui.registryDepot);return depotOk&&(!q||b.id.toLowerCase().includes(q)||b.reg.toLowerCase().includes(q))&&(ui.registryCat==="all"||b.cat===ui.registryCat)&&(ui.registryStatus==="all"||registryStatus(b)===ui.registryStatus);});return r.map(b=>{const st=registryStatus(b),label={in_transit:"In Transit",maintenance:"Maintenance",ready:"Ready",processing:"Processing",available:"Available"}[st],where=b.transferStatus==="in_transit"?dn(b.transferTo):(b.loc?dn(b.loc):"Network");return `<tr><td><b>${esc(b.id)}</b>${homeTag(b)}</td><td>${esc(b.reg)}</td><td><span class="tag cat-${String(b.cat||"B").toLowerCase()}">Cat ${esc(b.cat||"B")}</span></td><td>${esc(where)}</td><td>${tag(label,st==="ready"?"ok":st==="maintenance"||st==="in_transit"?"w":"b")}</td><td>${esc(b.route||"—")}</td><td><button class="btn sm s" onclick="editBus('${esc(b.id)}')">Edit</button></td></tr>`}).join("")||'<tr><td colspan="7"><div class="empty">No fleet records match these filters.</div></td></tr>'}
+function refreshRegistry(){const q=$("registryQ"),cat=$("registryCat"),depot=$("registryDepot"),status=$("registryStatus");if(q)ui.registryQ=q.value;if(cat)ui.registryCat=cat.value;if(depot)ui.registryDepot=depot.value;if(status)ui.registryStatus=status.value;const rows=$("registryRows");if(rows)rows.innerHTML=registryRows()}
+function fleetRegistry(){return `<div class="card"><div class="top"><div><h2>Fleet registry</h2><p class="sub l">Search and filter unique physical buses across the network.</p></div><span class="pill">${S.buses.length} vehicles</span></div><div class="registry-filters"><input id="registryQ" placeholder="Search bus code or registration" value="${esc(ui.registryQ)}" oninput="refreshRegistry()"><select id="registryCat" onchange="refreshRegistry()"><option value="all">All categories</option>${["A","B","C"].map(c=>`<option value="${c}"${ui.registryCat===c?" selected":""}>Category ${c}</option>`).join("")}</select><select id="registryDepot" onchange="refreshRegistry()"><option value="all">All depots</option>${S.depots.map(d=>`<option value="${d.id}"${ui.registryDepot===d.id?" selected":""}>${esc(d.name)}</option>`).join("")}</select><select id="registryStatus" onchange="refreshRegistry()"><option value="all">All statuses</option><option value="available"${ui.registryStatus==="available"?" selected":""}>Available</option><option value="processing"${ui.registryStatus==="processing"?" selected":""}>Processing</option><option value="ready"${ui.registryStatus==="ready"?" selected":""}>Ready</option><option value="in_transit"${ui.registryStatus==="in_transit"?" selected":""}>In Transit</option><option value="maintenance"${ui.registryStatus==="maintenance"?" selected":""}>Maintenance</option></select></div><div class="tw"><table><thead><tr><th>Bus code</th><th>Registration</th><th>Category</th><th>Location</th><th>Status</th><th>Route</th><th></th></tr></thead><tbody id="registryRows">${registryRows()}</tbody></table></div><p class="hint">Use Manage to register additional buses and edit depot schedules or drivers. Registration numbers must remain unique.</p></div>`}
+function editBus(id){const b=S.buses.find(x=>x.id===id);if(!b)return toast("Bus not found");const reg=prompt("Registration number",b.reg);if(reg===null)return;const category=prompt("Bus category (A, B or C)",b.cat||"B");if(category===null)return;const normalized=reg.trim().toUpperCase(),cat=category.trim().toUpperCase();if(!normalized||!/[A-C]/.test(cat)||!['A','B','C'].includes(cat))return toast("Enter a valid registration and category A, B or C");if(S.buses.some(x=>x!==b&&x.reg.toLowerCase()===normalized.toLowerCase()))return toast("Registration already belongs to another bus");b.reg=normalized;b.cat=cat;logm("Fleet record updated: "+b.id+" · "+normalized);save();render();}
 function addView(){
   return `<div class="card f"><h2>Add a New Depot</h2><p class="sub l">Enter the depot details by hand. Buses, schedule codes and drivers entered here show up immediately, and logins for the depot are generated automatically.</p>
   <div class="g2"><div><label>Depot name</label><input id="f_name" placeholder="e.g., Yeshwanthpur Depot"></div>
@@ -706,47 +654,20 @@ function manage(){
 function logView(){return `<div class="card"><h2>Activity Log</h2><p class="sub l">${auth.role==="admin"?"All depots":esc(dn(auth.depot))}</p>${logList(auth.role==="admin"?"":auth.depot,300)}</div>`}
 
 /* ---------- shell ---------- */
-function tabsFor(){
-  if(auth.role==="admin")return [["net","Network"],["add","Add Depot"],["ov","Depot Overview"],["manage","Manage"],["logins","Logins"],["log","Activity"]];
-  if(auth.role==="mgr")return [["ov","Depot Overview"],["entry","Entry Recorder"],["clean","Cleaner"],["charge","Charging"],["sched","Scheduler"],["loc","Bus Locator"],["manage","Manage"],["logins","Logins"],["log","Activity"]];
-  return [[auth.role,({entry:"Entry Recorder",clean:"Cleaner",charge:"Charging Incharge",sched:"Scheduler"})[auth.role]]];
-}
+function tabsFor(){return [["net","Network"],["ov","Depot Overview"],["registry","Fleet Registry"],["add","Add Depot"],["manage","Manage"],["logins","Depot Logins"],["log","Activity"]]}
 function go(t){ui.tab=t;ui.q="";ui.f=t==="log"?"all":"pending";ui.selectedBus="";render()}
-function partial(){const q=$("q"),pos=q.selectionStart;render();const n=$("q");n.focus();n.setSelectionRange(pos,pos)}
+function partial(){const q=$("q"),pos=q.selectionStart;render();const n=$("q");if(n){n.focus();n.setSelectionRange(pos,pos)}}
 function isDark(){const t=document.documentElement.dataset.theme;return t?t==="dark":matchMedia("(prefers-color-scheme:dark)").matches}
-function theme(){document.documentElement.dataset.theme=isDark()?"light":"dark";render()}
+function signOut(){if(window.parent&&window.parent!==window){window.parent.postMessage({type:"sfr:logout"},window.location.origin);return}window.location.href="index.html"}
+function theme(){document.documentElement.dataset.theme=isDark()?"light":"dark";localStorage.setItem("fleet_theme",document.documentElement.dataset.theme);if(window.parent&&window.parent!==window)window.parent.postMessage({type:"sfr:theme",value:document.documentElement.dataset.theme},window.location.origin);render()}
 const thBtn=()=>`<button class="ghost" onclick="theme()">${isDark()?"☀️ Light mode":"🌙 Dark mode"}</button>`;
-function updateLoginButton(){
-  const ready=$("u").value.trim()&&$("p").value;
-  $("loginBtn").classList.toggle("ready",Boolean(ready));
-}
-function login(){
-  $("app").innerHTML=`<div class="top"><span></span>${thBtn()}</div><div class="card login"><h2 style="text-align:center">Smart Fleet OS Login</h2><p class="sub">Multi-depot console</p>
-  <label for="u">User ID</label><input id="u" autocomplete="username" autocapitalize="off" oninput="updateLoginButton()"><label for="p">Password</label><input id="p" type="password" autocomplete="current-password" oninput="updateLoginButton()" onkeydown="if(event.key==='Enter')doLogin()">
-  <div class="err" id="err"></div><button id="loginBtn" class="btn login-submit" style="width:100%;padding:13px" onclick="doLogin()">Login</button>
-  <p class="sub" style="margin-top:14px;font-size:12px">Admin demo: admin / admin123 · Demo depot logins use password demo1234, e.g. chandapura-entry, chandapura-clean, chandapura-charge, chandapura-sched and chandapura-mgr.</p></div>`;
-  updateLoginButton();
-}
-function doLogin(){
-  const u=$("u").value.trim().toLowerCase(),p=$("p").value;
-  if(u==="admin"&&p==="admin123"){auth={role:"admin"};ui={tab:"net",depot:"",q:"",f:"pending",xf:""};return render()}
-  for(const d of S.depots)for(const r of ROLES)if(d.users[r[0]].u===u&&d.users[r[0]].p===p){auth={role:r[0],depot:d.id};ui={tab:r[0]==="mgr"?"ov":r[0],depot:d.id,q:"",f:"pending",xf:""};return render()}
-  $("err").textContent="Invalid user ID or password.";
-}
-function logout(){auth=null;render()}
 function cnt(prefix="f"){const n=Number($(prefix+"_count").value)||0,k=busLines($(prefix==="f"?"f_buses":"m_b").value).length;$(prefix+"_cnt").textContent=k+" of "+n+" buses entered"+(n&&k===n?" ✓":"")}
 function render(){
-  if(!auth)return login();
-  if(auth.role!=="admin"&&!dep(auth.depot))return logout();
-  const t=ui.tab,depTab=["ov","manage","logins"].includes(t),admin=auth.role==="admin";
-  const noD=admin&&!S.depots.length&&depTab;
-  const v=noD?'<div class="card empty">No depots yet. Use Add Depot.</div>':t==="net"?net():t==="add"?addView():t==="ov"?depOv():t==="manage"?manage():t==="logins"?loginsView():t==="log"?logView():t==="loc"?locator():t==="sched"?sched():["entry","clean","charge"].includes(t)?dbView(t):net();
-  const who=admin?"Admin":(ROLES.find(r=>r[0]===auth.role)[1]+" · "+dn(auth.depot));
-  const sel=admin&&depTab&&S.depots.length?`<select class="inl" onchange="ui.depot=this.value;render()" aria-label="Depot">${S.depots.map(d=>`<option value="${d.id}"${d.id===curD()?" selected":""}>${esc(d.name)}</option>`).join("")}</select>`:"";
-  $("app").innerHTML=`<div class="layout"><aside class="sidebar"><span class="pill">${esc(who)}</span>${sel}
-  <nav class="side-nav" aria-label="Main navigation">${tabsFor().map(x=>`<button class="nav-item${t===x[0]?" on":""}"${t===x[0]?' aria-current="page"':""} onclick="go('${x[0]}')">${x[1]}</button>`).join("")}</nav>
-  <div class="sidebar-actions">${thBtn()}<button class="ghost" onclick="logout()">Logout</button></div></aside>
-  <main class="main-content"><h1>Smart Fleet OS</h1><p class="sub">${admin?"Multi-depot admin console":auth.role==="mgr"?"Depot manager console · limited to this depot":esc(dn(auth.depot))}</p>${v}</main></div>`;
+  const t=ui.tab,view=t==="net"?net():t==="add"?addView():t==="ov"?depOv():t==="manage"?manage():t==="logins"?loginsView():t==="registry"?fleetRegistry():t==="log"?logView():net();
+  const active=["net","ov","registry","add","manage","logins","log"].includes(t)?t:"net";
+  const top=`<header class="top"><div class="pill">Admin Console</div>${thBtn()}</header>`;
+  const sidebar=`<aside class="sidebar"><span class="pill">${S.depots.length} depots · ${S.buses.length} buses</span>${S.depots.length?`<select class="inl" onchange="ui.depot=this.value;render()" aria-label="Selected depot">${S.depots.map(d=>`<option value="${d.id}"${d.id===curD()?" selected":""}>${esc(d.name)}</option>`).join("")}</select>`:""}<nav class="side-nav" aria-label="Admin navigation">${tabsFor().map(x=>`<button class="nav-item${active===x[0]?" on":""}"${active===x[0]?" aria-current=page":""} onclick="go('${x[0]}')">${x[1]}</button>`).join("")}</nav><button class="nav-item logout-item" onclick="signOut()">Sign out</button></aside>`;
+  $("app").innerHTML=`${top}<div class="layout">${sidebar}<main class="main-content"><h1>Smart Fleet Operations</h1><p class="sub">Central network management · live multi-depot state</p>${view}</main></div>`;
 }
 window.addEventListener("storage", e => {
   if(e.key === KEY){
@@ -754,5 +675,5 @@ window.addEventListener("storage", e => {
     render();
   }
 });
-load();render();
+if(localStorage.getItem("fleet_theme")==="dark")document.documentElement.dataset.theme="dark";load();render();
 </script></body></html>

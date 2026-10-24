@@ -312,7 +312,7 @@
 
         <div class="header">
             <h1>Smart Fleet OS</h1>
-            <p>Depot 44 (Chandapura) - Route & Driver Assignment</p>
+            <p id="scheduler-depot-label">Route & Driver Assignment</p>
         </div>
 
 
@@ -329,20 +329,59 @@
             <div id="scheduler-alert" class="alert"></div>
 
             <div class="form-group">
-                <label for="scheduler-route-select">Select Route / Schedule</label>
+                <label for="scheduler-route-select">Select Route / Schedule (Primary Input)</label>
                 <select id="scheduler-route-select" onchange="onScheduleSelected()"></select>
             </div>
 
+            <!-- Auto-Assignment Proposed Review Box -->
             <div id="auto-assignment-result"
-                style="margin-bottom: 1.25rem; padding: 1rem; background-color: var(--bg-card-subtle); border: 1px solid var(--border-subtle); border-radius: 6px; display: none;">
-                <!-- Reasoning displayed here -->
+                style="margin-bottom: 1.25rem; padding: 1.25rem; background-color: var(--bg-card-subtle); border: 1px solid var(--border-subtle); border-radius: 8px; display: none;">
+                <!-- Proposed assignment & reasoning displayed here -->
             </div>
 
-            <button class="logout-btn" onclick="schedulerLogout()">Logout</button>
+            <div class="form-group">
+                <label for="scheduler-bus-select">Assigned Bus (Auto-Populated on Route Selection)</label>
+                <select id="scheduler-bus-select" onchange="onManualResourceChanged()"></select>
+            </div>
+
+            <div class="form-group">
+                <label for="scheduler-driver-select">Assigned Driver (Auto-Populated on Route Selection)</label>
+                <select id="scheduler-driver-select" onchange="onManualResourceChanged()"></select>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+                <button id="final-assign-btn" onclick="finalizeAssignment()" style="flex:1;" disabled>Confirm & Save Assignment</button>
+                <button class="logout-btn" onclick="schedulerLogout()" style="width: auto;">Logout</button>
+            </div>
+
+            <!-- Active Confirmed Assignments Section -->
+            <div style="margin-top: 2.5rem; border-top: 1px solid var(--border-subtle); padding-top: 1.5rem;">
+                <h3 style="margin-top:0; color:var(--text-bright); font-size: 1.15rem;">Active Confirmed Assignments</h3>
+                <div style="overflow-x:auto;">
+                    <table id="confirmed-assignments-table" style="width:100%; border-collapse:collapse; margin-top:0.75rem; font-size: 0.9rem;">
+                        <thead>
+                            <tr style="text-align:left; border-bottom:1px solid var(--border-subtle);">
+                                <th style="padding:0.5rem;">Schedule ID</th>
+                                <th style="padding:0.5rem;">Route</th>
+                                <th style="padding:0.5rem;">Assigned Bus</th>
+                                <th style="padding:0.5rem;">Assigned Driver</th>
+                                <th style="padding:0.5rem; text-align:right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="confirmed-assignments-body">
+                            <!-- Filled dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
+            const ACTIVE_DEPOT_ID=new URLSearchParams(location.search).get('depotId')||'chandapura';
+        function activeDepotName(){try{const state=JSON.parse(localStorage.getItem('sfos_multi_v2')||'null'),depot=(state?.depots||[]).find(item=>item.id===ACTIVE_DEPOT_ID);if(depot?.name)return depot.name;}catch(e){}return ACTIVE_DEPOT_ID==='chandapura'?'Chandapura Depot 44':ACTIVE_DEPOT_ID.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase())+' Depot';}
+        function showActiveDepotDescription(text){const subtitle=document.querySelector('.subtitle');if(subtitle)subtitle.textContent=text;}
+
         // --- THEME MANAGEMENT ---
         function toggleTheme() {
             const body = document.body;
@@ -506,14 +545,17 @@
             // --- SCHEDULER LOGIC ---
             function initSchedulerView() {
                 requireSchedulerRole();
-                const readyPool = window.FleetDB.Scheduler.getReadyPool();
+                const depotLabel=document.getElementById('scheduler-depot-label');if(depotLabel)depotLabel.textContent=`${activeDepotName()} · Route & Driver Assignment`;
+                const readyPool = window.FleetDB.Scheduler.getReadyPool(ACTIVE_DEPOT_ID);
                 document.getElementById('pool-count').innerText = readyPool.length;
 
                 const scheduleSelect = document.getElementById('scheduler-route-select');
                 scheduleSelect.innerHTML = '<option value="">-- Choose Schedule (Route) --</option>';
 
-                const assignedSchedules = window.FleetDB.Scheduler.getAssignments().map(b => b.scheduleAssigned).filter(Boolean);
+                const assignments = window.FleetDB.Scheduler.getAssignments();
+                const assignedScheduleIds = assignments.map(b => b.scheduleAssigned).filter(Boolean);
 
+                // Compute allowed categories and time slots for schedules if needed
                 window.SCHEDULES.forEach(sch => {
                     const routeInfo = window.ROUTES.find(r => r.id === sch.route);
                     const routeDiff = routeInfo ? routeInfo.category : 'Moderate';
@@ -525,106 +567,277 @@
                     else if (mins >= 420 && mins < 600) ts = 'Extreme Peak';
                     else if (mins >= 960 && mins < 1200) ts = 'Extreme Peak';
 
-                    if (routeDiff === 'Complex') sch.allowedCats = ['A'];
-                    else if (routeDiff === 'Simple' && ts === 'Normal') sch.allowedCats = ['A', 'B', 'C'];
-                    else sch.allowedCats = ['A', 'B'];
+                    if (!sch.allowedCats || sch.allowedCats.length === 0) {
+                        if (routeDiff === 'Complex') sch.allowedCats = ['A'];
+                        else if (routeDiff === 'Simple' && ts === 'Normal') sch.allowedCats = ['A', 'B', 'C'];
+                        else sch.allowedCats = ['A', 'B'];
+                    }
                 });
 
-                window.SCHEDULES.filter(s => !assignedSchedules.includes(s.id)).forEach(sch => {
+                // Populate route dropdown with unassigned schedules
+                const availableSchedules = window.SCHEDULES.filter(s => !assignedScheduleIds.includes(s.id));
+                availableSchedules.forEach(sch => {
+                    const routeObj = window.ROUTES.find(r => r.id === sch.route);
+                    const routeName = routeObj ? routeObj.name : sch.route;
                     const opt = document.createElement('option');
                     opt.value = sanitizeInput(sch.id);
-                    opt.text = `${sch.id} | Route ${sch.route} | Req: ${sch.singleChargeReq}km | Cat: ${sch.allowedCats.join(', ')}`;
+                    opt.text = `${sch.id} | Route ${sch.route} (${routeName}) | Req: ${sch.singleChargeReq}km | Cat: ${sch.allowedCats.join(', ')} | Driver: ${sch.driverReq || 'Standard'}`;
                     scheduleSelect.appendChild(opt);
                 });
 
+                // Reset bus and driver select boxes
+                const busSelect = document.getElementById('scheduler-bus-select');
+                busSelect.innerHTML = '<option value="">-- Auto-Populated on Route Selection --</option>';
+
+                const driverSelect = document.getElementById('scheduler-driver-select');
+                driverSelect.innerHTML = '<option value="">-- Auto-Populated on Route Selection --</option>';
+
+                // Render Active Confirmed Assignments Table
+                renderConfirmedAssignmentsTable(assignments);
+            }
+
+            function renderConfirmedAssignmentsTable(assignments) {
+                const tbody = document.getElementById('confirmed-assignments-body');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+
+                if (!assignments || assignments.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="padding:1rem; text-align:center; color:var(--text-secondary);">No active assignments confirmed yet.</td></tr>';
+                    return;
+                }
+
+                assignments.forEach(asgn => {
+                    const tr = document.createElement('tr');
+                    tr.style.borderBottom = '1px solid var(--border-card)';
+
+                    const schedule = window.SCHEDULES.find(s => s.id === asgn.scheduleAssigned) || {};
+                    const routeId = schedule.route || 'N/A';
+
+                    tr.innerHTML = `
+                        <td style="padding:0.6rem 0.5rem; font-weight:600;">${sanitizeInput(asgn.scheduleAssigned || 'N/A')}</td>
+                        <td style="padding:0.6rem 0.5rem;">${sanitizeInput(routeId)}</td>
+                        <td style="padding:0.6rem 0.5rem;"><span class="tag cat-${(asgn.cat || 'B').toLowerCase()}">${sanitizeInput(asgn.busId)} (${sanitizeInput(asgn.regNo || 'N/A')})</span></td>
+                        <td style="padding:0.6rem 0.5rem;">${sanitizeInput(asgn.assignedDriver || 'N/A')}</td>
+                        <td style="padding:0.6rem 0.5rem; text-align:right;">
+                            <button onclick="unassignAssignment('${sanitizeInput(asgn.busId)}')" style="padding:0.35rem 0.65rem; font-size:0.8rem; background:transparent; color:var(--status-error); border:1px solid var(--status-error); width:auto; border-radius:4px; cursor:pointer;">
+                                Unassign
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
             }
 
             window.onScheduleSelected = function () {
                 requireSchedulerRole();
                 clearAlerts();
-                assignSelectedSchedule();
+                evaluateBestBus();
             };
 
-            function assignSelectedSchedule() {
+            window.evaluateBestBus = function () {
                 requireSchedulerRole();
-                const scheduleId = sanitizeInput(document.getElementById('scheduler-route-select').value);
+                const scheduleSelect = document.getElementById('scheduler-route-select');
+                const scheduleId = sanitizeInput(scheduleSelect.value);
                 const resultBox = document.getElementById('auto-assignment-result');
-                resultBox.style.display = 'none';
+                const assignBtn = document.getElementById('final-assign-btn');
+                const busSelect = document.getElementById('scheduler-bus-select');
+                const driverSelect = document.getElementById('scheduler-driver-select');
 
                 if (!scheduleId) {
+                    resultBox.style.display = 'none';
+                    assignBtn.disabled = true;
+                    busSelect.innerHTML = '<option value="">-- Auto-Populated on Route Selection --</option>';
+                    driverSelect.innerHTML = '<option value="">-- Auto-Populated on Route Selection --</option>';
+                    window.currentBestBusId = null;
                     return;
                 }
 
-                const schedule = window.SCHEDULES.find(s => s.id === scheduleId);
-                if (!schedule) {
-                    showAlert('scheduler', 'error', 'The selected route schedule could not be found.');
-                    return;
-                }
-
-                // Get ready pool from SchedulerDB (double-approved and unassigned buses)
-                const pool = window.FleetDB.Scheduler.getReadyPool();
-
-                const activeCats = schedule.allowedCats;
-
-                let validBuses = pool.filter(b => activeCats.includes(b.cat));
-                validBuses = validBuses.filter(b => b.actualRange >= schedule.singleChargeReq);
-
-                if (validBuses.length === 0) {
-                    resultBox.style.display = 'block';
-                    const safeCats = sanitizeInput(activeCats.join(', '));
-                    resultBox.innerHTML = `<p style="color:var(--status-error); font-weight:700; font-size:1.05rem; margin:0;">&#9888; No bus available for this route! No ready bus meets both range (&ge;${schedule.singleChargeReq} km) and category ([${safeCats}]) requirements.</p>`;
-                    return;
-                }
-
-                validBuses.sort((a, b) => (a.actualRange - schedule.singleChargeReq) - (b.actualRange - schedule.singleChargeReq));
-                validBuses.sort((a, b) => {
-                    const rank = { 'C': 1, 'B': 2, 'A': 3 };
-                    return rank[a.cat] - rank[b.cat];
+                // Call automatic assignment engine in FleetDB
+                const rec = window.FleetDB.Scheduler.recommendAssignment(scheduleId, {
+                    schedules: window.SCHEDULES,
+                    fleet: window.FLEET,
+                    routes: window.ROUTES,
+                    depotId: ACTIVE_DEPOT_ID
                 });
 
-                const bestBus = validBuses[0];
-                const assignedDrivers = window.FleetDB.Scheduler.getAssignments()
-                    .map(bus => bus.assignedDriver)
-                    .filter(Boolean);
-                const availableDrivers = Array.from(new Set(window.FLEET.map(bus => bus.driver).filter(Boolean)))
-                    .filter(driver => !assignedDrivers.includes(driver));
-                const driverName = bestBus.driver && availableDrivers.includes(bestBus.driver)
-                    ? bestBus.driver
-                    : availableDrivers[0];
-
-                if (!driverName) {
+                if (!rec.success) {
                     resultBox.style.display = 'block';
-                    resultBox.innerHTML = '<p style="color:var(--status-error); font-weight:700; font-size:1.05rem; margin:0;">&#9888; No available driver can be assigned to this route.</p>';
+                    assignBtn.disabled = true;
+                    window.currentBestBusId = null;
+
+                    let errorIcon = '&#9888;';
+                    let errorTitle = 'Assignment Cannot Be Completed';
+                    if (rec.errorType === 'NO_BUS') {
+                        errorTitle = 'No Suitable Bus Available';
+                        busSelect.innerHTML = '<option value="">-- No Eligible Bus Available --</option>';
+                    } else if (rec.errorType === 'NO_DRIVER') {
+                        errorTitle = 'No Eligible Driver Available';
+                        if (rec.bus) {
+                            busSelect.innerHTML = `<option value="${sanitizeInput(rec.bus.busId)}" selected>Bus ${sanitizeInput(rec.bus.busId)} (${sanitizeInput(rec.bus.regNo)})</option>`;
+                        }
+                        driverSelect.innerHTML = '<option value="">-- No Eligible Driver Available --</option>';
+                    }
+
+                    resultBox.innerHTML = `
+                        <div style="color:var(--status-error); font-weight:700; font-size:1.05rem; margin-bottom:0.35rem;">
+                            ${errorIcon} ${errorTitle}
+                        </div>
+                        <div style="font-size:0.9rem; color:var(--text-secondary); line-height:1.4;">
+                            ${sanitizeInput(rec.reason)}
+                        </div>
+                    `;
                     return;
                 }
 
-                const safeBestBusId = sanitizeInput(bestBus.busId);
-                const safeBestBusReg = sanitizeInput(bestBus.regNo);
+                // Recommendation succeeded!
+                const bestBus = rec.bus;
+                const bestDriver = rec.driver;
+                const schedule = rec.schedule;
+                window.currentBestBusId = bestBus.busId;
+
+                // 1. Auto-populate Bus select dropdown
+                busSelect.innerHTML = '';
+                const busOpt = document.createElement('option');
+                busOpt.value = sanitizeInput(bestBus.busId);
+                busOpt.text = `Bus ${bestBus.busId} (${bestBus.regNo}) - Cat ${bestBus.cat} | ${bestBus.actualRange} km (Recommended)`;
+                busOpt.selected = true;
+                busSelect.appendChild(busOpt);
+
+                // Add other ready pool buses as alternate choices for review
+                const readyPool = window.FleetDB.Scheduler.getReadyPool(ACTIVE_DEPOT_ID);
+                readyPool.forEach(b => {
+                    if (b.busId !== bestBus.busId && schedule.allowedCats.includes(b.cat) && b.actualRange >= schedule.singleChargeReq) {
+                        const opt = document.createElement('option');
+                        opt.value = sanitizeInput(b.busId);
+                        opt.text = `Bus ${b.busId} (${b.regNo}) - Cat ${b.cat} | ${b.actualRange} km`;
+                        busSelect.appendChild(opt);
+                    }
+                });
+
+                // 2. Auto-populate Driver select dropdown
+                driverSelect.innerHTML = '';
+                const driverOpt = document.createElement('option');
+                driverOpt.value = sanitizeInput(bestDriver);
+                driverOpt.text = `${bestDriver} (Recommended)`;
+                driverOpt.selected = true;
+                driverSelect.appendChild(driverOpt);
+
+                // Add other available drivers
+                const allDrivers = Array.from(new Set(window.FLEET.map(b => b.driver).filter(Boolean))).sort();
+                const assignedDrivers = window.FleetDB.Scheduler.getAssignments().map(b => b.assignedDriver).filter(Boolean);
+                allDrivers.forEach(d => {
+                    if (d !== bestDriver && !assignedDrivers.includes(d) && window.FleetDB.isDriverEligible(d, schedule)) {
+                        const opt = document.createElement('option');
+                        opt.value = sanitizeInput(d);
+                        opt.text = d;
+                        driverSelect.appendChild(opt);
+                    }
+                });
+
+                // 3. Display Proposed Assignment Review Box
+                resultBox.style.display = 'block';
+                const safeBusId = sanitizeInput(bestBus.busId);
+                const safeBusReg = sanitizeInput(bestBus.regNo);
                 const safeCat = sanitizeInput(bestBus.cat);
-                const safeActiveCats = sanitizeInput(activeCats.join(', '));
-                const safeDriverName = sanitizeInput(driverName);
+                const safeCats = sanitizeInput(schedule.allowedCats.join(', '));
+                const safeDriver = sanitizeInput(bestDriver);
+
+                resultBox.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                        <span class="badge" style="background:var(--tag-cat-b-bg); color:var(--tag-cat-b-fg); font-weight:700;">
+                            &#10003; PROPOSED ASSIGNMENT (Ready to Confirm)
+                        </span>
+                        <span style="font-size:0.85rem; color:var(--text-secondary);">Optimal Priority Match</span>
+                    </div>
+                    <div style="font-weight:600; font-size:1.1rem; margin-bottom:0.35rem; color:var(--text-bright);">
+                        Route ${sanitizeInput(schedule.route)} &larr; Bus ${safeBusId} (${safeBusReg}) & Driver ${safeDriver}
+                    </div>
+                    <div style="font-size:0.9rem; color:var(--text-secondary); line-height:1.5;">
+                        <strong>Bus Compatibility:</strong> Matches Category <strong>${safeCat}</strong> (Allowed: ${safeCats}).<br>
+                        <strong>Battery Range:</strong> Actual range of <strong>${bestBus.actualRange} km</strong> satisfies route requirement of <strong>${schedule.singleChargeReq} km</strong> with safety buffer of <strong>+${rec.bufferKm} km</strong>.<br>
+                        <strong>Driver Eligibility:</strong> <strong>${safeDriver}</strong> verified for <strong>${schedule.driverReq || 'Standard'}</strong> route requirements without schedule overlap.
+                    </div>
+                `;
+
+                assignBtn.disabled = false;
+
+                // Allocate the validated recommendation immediately after schedule selection.
+                window.finalizeAssignment();
+            };
+
+            window.onManualResourceChanged = function () {
+                requireSchedulerRole();
+                const busSelect = document.getElementById('scheduler-bus-select');
+                if (busSelect.value) {
+                    window.currentBestBusId = sanitizeInput(busSelect.value);
+                }
+            };
+
+            window.finalizeAssignment = function () {
+                requireSchedulerRole();
+                const scheduleId = sanitizeInput(document.getElementById('scheduler-route-select').value);
+                const busId = sanitizeInput(document.getElementById('scheduler-bus-select').value) || window.currentBestBusId;
+                const driverName = sanitizeInput(document.getElementById('scheduler-driver-select').value);
+
+                if (!scheduleId || !driverName || !busId) {
+                    showAlert('scheduler', 'error', 'Please ensure a route, bus, and driver are selected before confirming.');
+                    return;
+                }
 
                 try {
-                    window.FleetDB.Scheduler.assignBus(bestBus.busId, scheduleId, driverName);
-                } catch (e) {
-                    showAlert('scheduler', 'error', 'Error assigning bus: ' + e.message);
-                    return;
-                }
+                    // Assign bus using atomic pre-commit validation in SchedulerDB
+                    window.FleetDB.Scheduler.assignBus(busId, scheduleId, driverName, {
+                        schedules: window.SCHEDULES,
+                        fleet: window.FLEET,
+                        depotId: ACTIVE_DEPOT_ID
+                    });
 
-                resultBox.style.display = 'block';
-                resultBox.innerHTML = `
-                    <div style="font-weight:600; font-size:1.05rem; margin-bottom:0.25rem;">
-                        &#9989; Assigned: Bus ${safeBestBusId} <span style="font-weight:normal; color:var(--text-secondary);">(${safeBestBusReg})</span> with ${safeDriverName}
-                    </div>
-                    <div style="font-size:0.9rem; color:var(--text-secondary); line-height:1.4;">
-                        <strong>Reasoning:</strong> Matches Category <strong>${safeCat}</strong> (Allowed: ${safeActiveCats}).
-                        Actual range of <strong>${bestBus.actualRange} km</strong> comfortably fulfills route requirement of <strong>${schedule.singleChargeReq} km</strong>
-                        with a safety buffer of +${(bestBus.actualRange - schedule.singleChargeReq).toFixed(1)} km.
-                    </div>
-                    `;
-                showAlert('scheduler', 'success', `Bus ${bestBus.busId} and driver ${driverName} assigned to route schedule ${scheduleId}.`);
-                initSchedulerView();
-            }
+                    // Update local workflow state
+                    if (localWorkflowState[busId]) {
+                        localWorkflowState[busId].scheduleAssigned = scheduleId;
+                        localWorkflowState[busId].assignedDriver = driverName;
+                        saveState();
+                    }
+
+                    // Update memory schedule state
+                    const sch = window.SCHEDULES.find(s => s.id === scheduleId);
+                    if (sch) {
+                        sch.assignedBus = busId;
+                        sch.assignedDriver = driverName;
+                        sch.status = 'Assigned';
+                    }
+
+                    showAlert('scheduler', 'success', `Confirmed! Bus ${busId} and Driver ${driverName} successfully assigned to Schedule ${scheduleId}.`);
+
+                    document.getElementById('auto-assignment-result').style.display = 'none';
+                    document.getElementById('final-assign-btn').disabled = true;
+                    window.currentBestBusId = null;
+
+                    initSchedulerView(); // Refresh route dropdown, ready pool count, and confirmed assignments table
+                } catch (e) {
+                    showAlert('scheduler', 'error', 'Assignment failed: ' + e.message);
+                }
+            };
+
+            window.unassignAssignment = function (busId) {
+                requireSchedulerRole();
+                if (!busId) return;
+
+                try {
+                    window.FleetDB.Scheduler.unassignBus(busId);
+
+                    if (localWorkflowState[busId]) {
+                        localWorkflowState[busId].scheduleAssigned = null;
+                        localWorkflowState[busId].assignedDriver = null;
+                        saveState();
+                    }
+
+                    showAlert('scheduler', 'success', `Bus ${busId} has been unassigned and returned to the ready pool.`);
+                    initSchedulerView();
+                } catch (e) {
+                    showAlert('scheduler', 'error', 'Error unassigning bus: ' + e.message);
+                }
+            };
         };
     </script>
 
